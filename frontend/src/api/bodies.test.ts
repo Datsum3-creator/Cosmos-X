@@ -4,6 +4,7 @@ import {
   fetchBodies,
   fetchBodyBySlug,
   fetchLatestTelemetry,
+  syncBodyTelemetry,
 } from "./bodies";
 
 describe("bodies API client", () => {
@@ -137,5 +138,34 @@ describe("bodies API client", () => {
         velocity_kms: 29.8,
       }),
     ).rejects.toThrow("already exists");
+  });
+
+  it("syncs telemetry from Horizons", async () => {
+    const syncPayload = {
+      created: true,
+      source: "jpl-horizons",
+      snapshot: {
+        id: 15,
+        body_id: 4,
+        epoch_utc: "2026-11-26T12:00:00",
+        position_x_km: 64200000,
+        position_y_km: 133100000,
+        position_z_km: -11500,
+        velocity_kms: 29.79,
+        created_at: "2026-11-26T12:00:00Z",
+      },
+    };
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 201,
+        json: async () => syncPayload,
+      }),
+    );
+
+    const res = await syncBodyTelemetry("earth", "2026-11-26T12:00:00.000Z");
+    expect(res).toEqual(syncPayload);
   });
 });

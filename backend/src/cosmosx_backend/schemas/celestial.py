@@ -43,3 +43,13 @@ class TelemetrySnapshotRead(BaseModel):
     position_z_km: float
     velocity_kms: float | None
     created_at: datetime
+
+
+class TelemetrySyncRequest(BaseModel):
+    epoch_utc: datetime | None = None
+
+
+class TelemetrySyncResponse(BaseModel):
+    created: bool
+    source: str
+    snapshot: TelemetrySnapshotRead

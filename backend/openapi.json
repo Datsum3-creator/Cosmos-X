@@ -271,6 +271,65 @@
           }
         }
       }
+    },
+    "/api/v1/bodies/{slug}/telemetry/sync": {
+      "post": {
+        "tags": [
+          "bodies"
+        ],
+        "summary": "Sync Body Telemetry From Horizons",
+        "operationId": "sync_body_telemetry_from_horizons_api_v1_bodies__slug__telemetry_sync_post",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/TelemetrySyncRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelemetrySyncResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -459,6 +518,46 @@
           "created_at"
         ],
         "title": "TelemetrySnapshotRead"
+      },
+      "TelemetrySyncRequest": {
+        "properties": {
+          "epoch_utc": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Epoch Utc"
+          }
+        },
+        "type": "object",
+        "title": "TelemetrySyncRequest"
+      },
+      "TelemetrySyncResponse": {
+        "properties": {
+          "created": {
+            "type": "boolean",
+            "title": "Created"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/TelemetrySnapshotRead"
+          }
+        },
+        "type": "object",
+        "required": [
+          "created",
+          "source",
+          "snapshot"
+        ],
+        "title": "TelemetrySyncResponse"
       },
       "ValidationError": {
         "properties": {

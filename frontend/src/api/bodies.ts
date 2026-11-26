@@ -4,6 +4,8 @@ export type CelestialBody = components["schemas"]["CelestialBodyRead"];
 export type TelemetrySnapshot = components["schemas"]["TelemetrySnapshotRead"];
 export type TelemetrySnapshotCreate =
   components["schemas"]["TelemetrySnapshotCreate"];
+export type TelemetrySyncResponse =
+  components["schemas"]["TelemetrySyncResponse"];
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
@@ -77,4 +79,25 @@ export async function createBodyTelemetry(
     throw new Error(`Create telemetry for '${slug}' failed (${res.status})`);
   }
   return (await res.json()) as TelemetrySnapshot;
+}
+
+export async function syncBodyTelemetry(
+  slug: string,
+  epochUtc?: string,
+): Promise<TelemetrySyncResponse> {
+  const res = await fetch(
+    `${API_BASE_URL}/api/v1/bodies/${encodeURIComponent(slug)}/telemetry/sync`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(epochUtc ? { epoch_utc: epochUtc } : {}),
+    },
+  );
+  if (res.status === 404) {
+    throw new Error(`No JPL Horizons state vector available for '${slug}'.`);
+  }
+  if (!res.ok) {
+    throw new Error(`Horizons sync for '${slug}' failed (${res.status})`);
+  }
+  return (await res.json()) as TelemetrySyncResponse;
 }

@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -11,7 +11,10 @@ from cosmosx_backend.schemas.celestial import (
     CelestialBodyRead,
     TelemetrySnapshotCreate,
     TelemetrySnapshotRead,
+    TelemetrySyncRequest,
+    TelemetrySyncResponse,
 )
+from cosmosx_backend.services.horizons import fetch_horizons_state_vector
 
 router = APIRouter(prefix="/bodies", tags=["bodies"])
 DbSession = Annotated[Session, Depends(get_db)]
@@ -103,3 +106,63 @@ def create_body_telemetry(
         ) from exc
     db.refresh(snapshot)
     return snapshot
+
+
+@router.post(
+    "/{slug}/telemetry/sync",
+    response_model=TelemetrySyncResponse,
+)
+def sync_body_telemetry_from_horizons(
+    slug: str,
+    response: Response,
+    db: DbSession,
+    payload: TelemetrySyncRequest | None = None,
+) -> TelemetrySyncResponse:
+    body = _get_body_or_404(db, slug)
+    requested_epoch = payload.epoch_utc if payload is not None else None
+
+    try:
+        vector = fetch_horizons_state_vector(slug, requested_epoch)
+    except OSError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"JPL Horizons request failed for '{slug}': {exc}",
+        ) from exc
+
+    if vector is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No JPL Horizons state vector available for '{slug}'",
+        )
+
+    existing = db.scalar(
+        select(TelemetrySnapshot).where(
+            TelemetrySnapshot.body_id == body.id,
+            TelemetrySnapshot.epoch_utc == vector.epoch_utc,
+        )
+    )
+    if existing is not None:
+        response.status_code = status.HTTP_200_OK
+        return TelemetrySyncResponse(
+            created=False,
+            source=vector.source,
+            snapshot=existing,
+        )
+
+    snapshot = TelemetrySnapshot(
+        body_id=body.id,
+        epoch_utc=vector.epoch_utc,
+        position_x_km=vector.position_x_km,
+        position_y_km=vector.position_y_km,
+        position_z_km=vector.position_z_km,
+        velocity_kms=vector.velocity_kms,
+    )
+    db.add(snapshot)
+    db.commit()
+    db.refresh(snapshot)
+    response.status_code = status.HTTP_201_CREATED
+    return TelemetrySyncResponse(
+        created=True,
+        source=vector.source,
+        snapshot=snapshot,
+    )

@@ -164,6 +164,12 @@ body,
   text-transform: lowercase;
 }
 
+.action-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
 .mini-btn {
   border: 1px solid rgba(56, 189, 248, 0.4);
   background: rgba(14, 116, 144, 0.25);

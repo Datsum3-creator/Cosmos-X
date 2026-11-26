@@ -10,6 +10,7 @@ import {
   createBodyTelemetry,
   fetchBodies,
   fetchBodyTelemetry,
+  syncBodyTelemetry,
   type CelestialBody,
   type TelemetrySnapshot,
 } from "./api/bodies";
@@ -101,6 +102,7 @@ export function App() {
   const [ingestVelKms, setIngestVelKms] = useState<string>("0");
   const [submittingTelemetry, setSubmittingTelemetry] =
     useState<boolean>(false);
+  const [syncingHorizons, setSyncingHorizons] = useState<boolean>(false);
   const [ingestFeedback, setIngestFeedback] = useState<{
     kind: "ok" | "err";
     text: string;
@@ -288,6 +290,35 @@ export function App() {
     setIngestEpochInput(toDatetimeLocalUtc(epochMs));
   }, [selectedSlug, epochMs]);
 
+  const handleSyncHorizons = useCallback(async () => {
+    if (!selectedSlug) {
+      return;
+    }
+    setSyncingHorizons(true);
+    setIngestFeedback(null);
+    try {
+      const result = await syncBodyTelemetry(
+        selectedSlug,
+        new Date(epochMs).toISOString(),
+      );
+      setIngestFeedback({
+        kind: "ok",
+        text: result.created
+          ? `Synced ${result.source} snapshot.`
+          : `Already up to date (${result.source}).`,
+      });
+      setReloadNonce((n) => n + 1);
+    } catch (err) {
+      setIngestFeedback({
+        kind: "err",
+        text:
+          err instanceof Error ? err.message : "Horizons sync failed.",
+      });
+    } finally {
+      setSyncingHorizons(false);
+    }
+  }, [selectedSlug, epochMs]);
+
   const handleIngestSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
@@ -395,7 +426,7 @@ export function App() {
       <header className="hud-panel hud-top">
         <div className="brand">
           <span className="brand-title">COSMOS X</span>
-          <span className="brand-sub">Phase 1 · J2000 Orbital Workspace</span>
+          <span className="brand-sub">Phase 2 · J2000 &amp; Horizons Workspace</span>
         </div>
 
         <div className="status-row">
@@ -485,17 +516,35 @@ export function App() {
 
             <div className="panel-header sub-header">
               <h2>Latest Telemetry</h2>
-              <button
-                type="button"
-                className="mini-btn"
-                onClick={() => {
-                  setShowIngestForm((open) => !open);
-                  setIngestFeedback(null);
-                }}
-              >
-                {showIngestForm ? "Close" : "+ Log Snapshot"}
-              </button>
+              <div className="action-row">
+                <button
+                  type="button"
+                  className="mini-btn"
+                  disabled={syncingHorizons}
+                  onClick={handleSyncHorizons}
+                >
+                  {syncingHorizons ? "Syncing..." : "Sync Horizons"}
+                </button>
+                <button
+                  type="button"
+                  className="mini-btn"
+                  onClick={() => {
+                    setShowIngestForm((open) => !open);
+                    setIngestFeedback(null);
+                  }}
+                >
+                  {showIngestForm ? "Close" : "+ Log Snapshot"}
+                </button>
+              </div>
             </div>
+
+            {!showIngestForm && ingestFeedback && (
+              <p
+                className={`ingest-feedback ${ingestFeedback.kind === "ok" ? "ok" : "err"}`}
+              >
+                {ingestFeedback.text}
+              </p>
+            )}
 
             {showIngestForm && (
               <form className="ingest-form" onSubmit={handleIngestSubmit}>
