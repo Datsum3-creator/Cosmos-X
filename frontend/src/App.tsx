@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { fetchBodies, type CelestialBody } from "./api/bodies";
+import {
+  fetchBodies,
+  fetchLatestTelemetry,
+  type CelestialBody,
+  type TelemetrySnapshot,
+} from "./api/bodies";
 import {
   fetchDbHealth,
   fetchHealth,
@@ -9,10 +14,31 @@ import {
 import { CosmosScene } from "./scene/CosmosScene";
 
 const RATE_OPTIONS = [1, 10, 45, 180] as const;
+const AU_KM = 149_597_870.7;
+
+interface TelemetryState {
+  slug: string;
+  snapshot: TelemetrySnapshot | null;
+  error: string | null;
+}
+
+function formatCoordKm(km: number): string {
+  if (Math.abs(km) >= 1_000_000) {
+    return `${(km / 1_000_000).toFixed(2)}M km`;
+  }
+  return `${km.toLocaleString("en-US", { maximumFractionDigits: 0 })} km`;
+}
+
+function formatEpochUtc(epoch: string): string {
+  return `${epoch.replace("T", " ").slice(0, 19)} UTC`;
+}
 
 export function App() {
   const [bodies, setBodies] = useState<CelestialBody[]>([]);
   const [selectedSlug, setSelectedSlug] = useState<string | null>("earth");
+  const [telemetryState, setTelemetryState] = useState<TelemetryState | null>(
+    null,
+  );
   const [apiHealth, setApiHealth] = useState<HealthResponse | null>(null);
   const [dbHealth, setDbHealth] = useState<DbHealthResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -62,10 +88,69 @@ export function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!selectedSlug) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const targetSlug = selectedSlug;
+
+    async function loadTelemetry() {
+      try {
+        const latest = await fetchLatestTelemetry(
+          targetSlug,
+          controller.signal,
+        );
+        if (!controller.signal.aborted) {
+          setTelemetryState({
+            slug: targetSlug,
+            snapshot: latest,
+            error: null,
+          });
+        }
+      } catch (err) {
+        if (!controller.signal.aborted) {
+          setTelemetryState({
+            slug: targetSlug,
+            snapshot: null,
+            error:
+              err instanceof Error ? err.message : "Telemetry unavailable",
+          });
+        }
+      }
+    }
+
+    void loadTelemetry();
+    return () => {
+      controller.abort();
+    };
+  }, [selectedSlug]);
+
   const selectedBody = useMemo(
     () => bodies.find((item) => item.slug === selectedSlug) ?? null,
     [bodies, selectedSlug],
   );
+
+  const activeTelemetry =
+    selectedSlug && telemetryState?.slug === selectedSlug
+      ? telemetryState
+      : null;
+  const telemetryLoading = selectedSlug !== null && activeTelemetry === null;
+  const telemetry = activeTelemetry?.snapshot ?? null;
+  const telemetryError = activeTelemetry?.error ?? null;
+
+  const heliocentricAu = useMemo(() => {
+    if (!telemetry) {
+      return null;
+    }
+    const distKm = Math.hypot(
+      telemetry.position_x_km,
+      telemetry.position_y_km,
+      telemetry.position_z_km,
+    );
+    return distKm / AU_KM;
+  }, [telemetry]);
 
   const handleResetView = useCallback(() => {
     setSelectedSlug(null);
@@ -147,28 +232,70 @@ export function App() {
           )}
         </div>
         {selectedBody ? (
-          <dl className="inspector-grid">
-            <dt>Name</dt>
-            <dd>{selectedBody.name}</dd>
-            <dt>Slug</dt>
-            <dd>{selectedBody.slug}</dd>
-            <dt>Parent</dt>
-            <dd>{selectedBody.parent_slug ?? "Barycenter"}</dd>
-            <dt>Mean Radius</dt>
-            <dd>
-              {selectedBody.radius_km !== null
-                ? `${selectedBody.radius_km.toLocaleString()} km`
-                : "N/A"}
-            </dd>
-            <dt>Orbital Period</dt>
-            <dd>
-              {selectedBody.orbital_period_days !== null
-                ? `${selectedBody.orbital_period_days.toLocaleString()} days`
-                : "Unbound / Primary"}
-            </dd>
-            <dt>Ephemeris</dt>
-            <dd>{selectedBody.ephemeris_source}</dd>
-          </dl>
+          <>
+            <dl className="inspector-grid">
+              <dt>Name</dt>
+              <dd>{selectedBody.name}</dd>
+              <dt>Slug</dt>
+              <dd>{selectedBody.slug}</dd>
+              <dt>Parent</dt>
+              <dd>{selectedBody.parent_slug ?? "Barycenter"}</dd>
+              <dt>Mean Radius</dt>
+              <dd>
+                {selectedBody.radius_km !== null
+                  ? `${selectedBody.radius_km.toLocaleString("en-US")} km`
+                  : "N/A"}
+              </dd>
+              <dt>Orbital Period</dt>
+              <dd>
+                {selectedBody.orbital_period_days !== null
+                  ? `${selectedBody.orbital_period_days.toLocaleString("en-US")} days`
+                  : "Unbound / Primary"}
+              </dd>
+              <dt>Ephemeris</dt>
+              <dd>{selectedBody.ephemeris_source}</dd>
+            </dl>
+
+            <div className="inspector-divider" />
+
+            <div className="panel-header sub-header">
+              <h2>Latest Telemetry</h2>
+              <span className="badge">/telemetry/latest</span>
+            </div>
+
+            {telemetryLoading ? (
+              <p className="empty-state">Loading state vector...</p>
+            ) : telemetryError ? (
+              <p className="empty-state error-text">{telemetryError}</p>
+            ) : telemetry ? (
+              <dl className="inspector-grid">
+                <dt>Epoch</dt>
+                <dd className="mono">{formatEpochUtc(telemetry.epoch_utc)}</dd>
+                <dt>Range</dt>
+                <dd className="mono">
+                  {heliocentricAu !== null
+                    ? `${heliocentricAu.toFixed(3)} AU`
+                    : "N/A"}
+                </dd>
+                <dt>Velocity</dt>
+                <dd className="mono">
+                  {telemetry.velocity_kms !== null
+                    ? `${telemetry.velocity_kms.toFixed(2)} km/s`
+                    : "N/A"}
+                </dd>
+                <dt>Pos X</dt>
+                <dd className="mono">{formatCoordKm(telemetry.position_x_km)}</dd>
+                <dt>Pos Y</dt>
+                <dd className="mono">{formatCoordKm(telemetry.position_y_km)}</dd>
+                <dt>Pos Z</dt>
+                <dd className="mono">{formatCoordKm(telemetry.position_z_km)}</dd>
+              </dl>
+            ) : (
+              <p className="empty-state">
+                No telemetry snapshots stored for this body.
+              </p>
+            )}
+          </>
         ) : (
           <p className="empty-state">
             Click any body in the 3D viewport or catalog to lock camera focus.

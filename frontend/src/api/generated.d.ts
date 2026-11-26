@@ -72,6 +72,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/bodies/{slug}/telemetry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Body Telemetry */
+        get: operations["list_body_telemetry_api_v1_bodies__slug__telemetry_get"];
+        put?: never;
+        /** Create Body Telemetry */
+        post: operations["create_body_telemetry_api_v1_bodies__slug__telemetry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bodies/{slug}/telemetry/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Latest Body Telemetry */
+        get: operations["get_latest_body_telemetry_api_v1_bodies__slug__telemetry_latest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -104,6 +139,47 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** TelemetrySnapshotCreate */
+        TelemetrySnapshotCreate: {
+            /**
+             * Epoch Utc
+             * Format: date-time
+             */
+            epoch_utc: string;
+            /** Position X Km */
+            position_x_km: number;
+            /** Position Y Km */
+            position_y_km: number;
+            /** Position Z Km */
+            position_z_km: number;
+            /** Velocity Kms */
+            velocity_kms?: number | null;
+        };
+        /** TelemetrySnapshotRead */
+        TelemetrySnapshotRead: {
+            /** Id */
+            id: number;
+            /** Body Id */
+            body_id: number;
+            /**
+             * Epoch Utc
+             * Format: date-time
+             */
+            epoch_utc: string;
+            /** Position X Km */
+            position_x_km: number;
+            /** Position Y Km */
+            position_y_km: number;
+            /** Position Z Km */
+            position_z_km: number;
+            /** Velocity Kms */
+            velocity_kms: number | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -209,6 +285,105 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CelestialBodyRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_body_telemetry_api_v1_bodies__slug__telemetry_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TelemetrySnapshotRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_body_telemetry_api_v1_bodies__slug__telemetry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TelemetrySnapshotCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TelemetrySnapshotRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_latest_body_telemetry_api_v1_bodies__slug__telemetry_latest_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TelemetrySnapshotRead"];
                 };
             };
             /** @description Validation Error */

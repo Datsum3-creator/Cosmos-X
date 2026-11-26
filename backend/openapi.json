@@ -121,6 +121,156 @@
           }
         }
       }
+    },
+    "/api/v1/bodies/{slug}/telemetry": {
+      "get": {
+        "tags": [
+          "bodies"
+        ],
+        "summary": "List Body Telemetry",
+        "operationId": "list_body_telemetry_api_v1_bodies__slug__telemetry_get",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 25,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TelemetrySnapshotRead"
+                  },
+                  "title": "Response List Body Telemetry Api V1 Bodies  Slug  Telemetry Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "bodies"
+        ],
+        "summary": "Create Body Telemetry",
+        "operationId": "create_body_telemetry_api_v1_bodies__slug__telemetry_post",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TelemetrySnapshotCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelemetrySnapshotRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bodies/{slug}/telemetry/latest": {
+      "get": {
+        "tags": [
+          "bodies"
+        ],
+        "summary": "Get Latest Body Telemetry",
+        "operationId": "get_latest_body_telemetry_api_v1_bodies__slug__telemetry_latest_get",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelemetrySnapshotRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -212,6 +362,103 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "TelemetrySnapshotCreate": {
+        "properties": {
+          "epoch_utc": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Epoch Utc"
+          },
+          "position_x_km": {
+            "type": "number",
+            "title": "Position X Km"
+          },
+          "position_y_km": {
+            "type": "number",
+            "title": "Position Y Km"
+          },
+          "position_z_km": {
+            "type": "number",
+            "title": "Position Z Km"
+          },
+          "velocity_kms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Velocity Kms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "epoch_utc",
+          "position_x_km",
+          "position_y_km",
+          "position_z_km"
+        ],
+        "title": "TelemetrySnapshotCreate"
+      },
+      "TelemetrySnapshotRead": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "body_id": {
+            "type": "integer",
+            "title": "Body Id"
+          },
+          "epoch_utc": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Epoch Utc"
+          },
+          "position_x_km": {
+            "type": "number",
+            "title": "Position X Km"
+          },
+          "position_y_km": {
+            "type": "number",
+            "title": "Position Y Km"
+          },
+          "position_z_km": {
+            "type": "number",
+            "title": "Position Z Km"
+          },
+          "velocity_kms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Velocity Kms"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "body_id",
+          "epoch_utc",
+          "position_x_km",
+          "position_y_km",
+          "position_z_km",
+          "velocity_kms",
+          "created_at"
+        ],
+        "title": "TelemetrySnapshotRead"
       },
       "ValidationError": {
         "properties": {

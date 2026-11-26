@@ -130,8 +130,10 @@ body,
 .hud-right {
   top: 72px;
   right: 14px;
-  width: 270px;
+  width: 296px;
   padding: 12px 14px;
+  max-height: calc(100vh - 150px);
+  overflow-y: auto;
 }
 
 .panel-header {
@@ -139,6 +141,10 @@ body,
   align-items: center;
   justify-content: space-between;
   margin-bottom: 10px;
+}
+
+.sub-header {
+  margin-bottom: 8px;
 }
 
 .panel-header h2 {
@@ -204,10 +210,10 @@ body,
 .inspector-grid {
   margin: 0;
   display: grid;
-  grid-template-columns: 104px 1fr;
-  row-gap: 8px;
+  grid-template-columns: 98px 1fr;
+  row-gap: 7px;
   column-gap: 8px;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
 }
 
 .inspector-grid dt {
@@ -221,11 +227,26 @@ body,
   text-align: right;
 }
 
+.inspector-grid dd.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.76rem;
+}
+
+.inspector-divider {
+  height: 1px;
+  margin: 12px 0;
+  background: rgba(148, 163, 184, 0.18);
+}
+
 .empty-state {
   margin: 6px 0 0;
   font-size: 0.8rem;
   color: #94a3b8;
   line-height: 1.45;
+}
+
+.error-text {
+  color: #fca5a5;
 }
 
 .hud-bottom {
@@ -252,6 +273,7 @@ body,
   padding: 6px 10px;
   font-size: 0.78rem;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .control-btn:hover {

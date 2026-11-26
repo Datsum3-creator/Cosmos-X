@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchBodies, fetchBodyBySlug } from "./bodies";
+import {
+  fetchBodies,
+  fetchBodyBySlug,
+  fetchLatestTelemetry,
+} from "./bodies";
 
 describe("bodies API client", () => {
   afterEach(() => {
@@ -45,5 +49,43 @@ describe("bodies API client", () => {
     await expect(fetchBodyBySlug("pluto")).rejects.toThrow(
       "Body 'pluto' failed (404)",
     );
+  });
+
+  it("returns latest telemetry snapshot when present", async () => {
+    const snapshot = {
+      id: 4,
+      body_id: 4,
+      epoch_utc: "2026-11-26T00:00:00",
+      position_x_km: 63580000,
+      position_y_km: 133450000,
+      position_z_km: -12500,
+      velocity_kms: 29.78,
+      created_at: "2026-11-26T00:00:00Z",
+    };
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => snapshot,
+      }),
+    );
+
+    const result = await fetchLatestTelemetry("earth");
+    expect(result).toEqual(snapshot);
+  });
+
+  it("returns null when latest telemetry returns 404", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+      }),
+    );
+
+    const result = await fetchLatestTelemetry("earth");
+    expect(result).toBeNull();
   });
 });
