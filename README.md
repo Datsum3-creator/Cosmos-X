@@ -4,8 +4,8 @@
 
 ## Architecture
 
-* **Backend (ackend/)**: FastAPI v1 API (/api/v1/bodies, /telemetry, /telemetry/latest, /health, /health/db) using least-privilege PostgreSQL roles (cosmosx_migrator for schema migrations, cosmosx_app for runtime queries).
-* **Frontend (rontend/)**: React Three Fiber 3D orbital workspace with J2000 Keplerian ephemeris, elliptical orbit paths, UTC time scrubber, URL hash state, 3D sprite labels, smooth fly-to camera, axial spin, and live telemetry Inspector + snapshot ingest UI.
+* **Backend (ackend/)**: FastAPI v1 API (/api/v1/bodies, /telemetry, /telemetry/latest, /telemetry/sync, /health, /health/db) using least-privilege PostgreSQL roles (cosmosx_migrator for schema migrations, cosmosx_app for runtime queries) and live NASA JPL Horizons state-vector ingestion.
+* **Frontend (rontend/)**: React Three Fiber 3D orbital workspace with J2000 Keplerian ephemeris, elliptical orbit paths, UTC time scrubber, URL hash state, 3D sprite labels, smooth fly-to camera, axial spin, live telemetry Inspector + snapshot ingest + Horizons sync, 3D telemetry snapshot trails with live polling, Milky Way galactic scale toggle, and vendor code-splitting.
 * **Codegen (scripts/openapi-codegen/)**: Exports ackend/openapi.json from FastAPI and generates rontend/src/api/generated.d.ts via openapi-typescript.
 
 ## Local Setup (Windows 11 / PowerShell)
