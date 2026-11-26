@@ -1,0 +1,70 @@
+﻿name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: cosmosx_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "backend/uv.lock"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install backend dependencies
+        run: uv sync --frozen --dev
+      - name: Lint with ruff
+        run: uv run --no-sync python -m ruff check src tests
+      - name: Run migrations and pytest
+        env:
+          DATABASE_URL: postgresql+psycopg://postgres:password@localhost:5432/cosmosx_test
+          MIGRATION_DATABASE_URL: postgresql+psycopg://postgres:password@localhost:5432/cosmosx_test
+          TEST_DATABASE_URL: postgresql+psycopg://postgres:password@localhost:5432/cosmosx_test
+        run: |
+          uv run --no-sync alembic upgrade head
+          uv run --no-sync python -m pytest -v
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Lint with oxlint
+        run: npm run lint
+      - name: Run unit tests with vitest
+        run: npm test
+      - name: Build production bundle
+        run: npm run build

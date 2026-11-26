@@ -1,0 +1,50 @@
+﻿services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-cosmosx_dev}
+    ports:
+      - "5432:5432"
+    volumes:
+      - cosmosx_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-cosmosx_dev}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      APP_ENV: production
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://postgres:postgres@postgres:5432/cosmosx_dev}
+      MIGRATION_DATABASE_URL: ${MIGRATION_DATABASE_URL:-postgresql+psycopg://postgres:postgres@postgres:5432/cosmosx_dev}
+      TEST_DATABASE_URL: ${TEST_DATABASE_URL:-postgresql+psycopg://postgres:postgres@postgres:5432/cosmosx_dev}
+      CORS_ORIGINS: '["http://localhost:8080","http://localhost:5173"]'
+    command: >
+      sh -c "uv run --no-sync alembic upgrade head &&
+             uv run --no-sync python -m cosmosx_backend.db.seed &&
+             uv run --no-sync uvicorn cosmosx_backend.main:app --host 0.0.0.0 --port 8000"
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: http://localhost:8000
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+
+volumes:
+  cosmosx_pgdata:
