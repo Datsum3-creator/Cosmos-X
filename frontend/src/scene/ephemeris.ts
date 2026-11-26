@@ -1,4 +1,4 @@
-export type Vec3 = [number, number, number];
+﻿export type Vec3 = [number, number, number];
 
 export interface KeplerElements {
   a: number;
@@ -15,11 +15,24 @@ export interface KeplerElements {
   nodeDot: number;
 }
 
+export interface SpacecraftTrajectoryCurve {
+  points: Vec3[];
+  closed: boolean;
+}
+
+interface OutboundMissionSpec {
+  anchorAu: number;
+  rateAuPerYear: number;
+  minAu: number;
+  dir: Vec3;
+}
+
 export const J2000_UNIX_MS = Date.UTC(2000, 0, 1, 12, 0, 0);
 export const MS_PER_DAY = 86_400_000;
+const ANCHOR_2026_MS = Date.UTC(2026, 10, 26, 0, 0, 0);
 const DEG_TO_RAD = Math.PI / 180;
 
-// Standish (1992) J2000.0 approximate planetary elements (valid 1800–2050 AD)
+// Standish (1992) J2000.0 approximate planetary elements (valid 1800-2050 AD)
 export const PLANET_ELEMENTS: Record<string, KeplerElements> = {
   mercury: {
     a: 0.38709927,
@@ -135,6 +148,45 @@ export const PLANET_ELEMENTS: Record<string, KeplerElements> = {
   },
 };
 
+// Post-Venus-flyby ~88-day final science orbit for Parker Solar Probe
+const SPACECRAFT_ORBIT_ELEMENTS: Record<string, KeplerElements> = {
+  "parker-solar-probe": {
+    a: 0.388,
+    aDot: 0,
+    e: 0.881,
+    eDot: 0,
+    iDeg: 3.39,
+    iDot: 0,
+    lDeg: 48.0,
+    lDot: 149290.0,
+    wBarDeg: 212.0,
+    wBarDot: 0,
+    nodeDeg: 112.0,
+    nodeDot: 0,
+  },
+};
+
+const OUTBOUND_MISSIONS: Record<string, OutboundMissionSpec> = {
+  "voyager-1": {
+    anchorAu: 168.0,
+    rateAuPerYear: 3.57,
+    minAu: 12.0,
+    dir: [-0.148, -0.817, 0.557],
+  },
+  "voyager-2": {
+    anchorAu: 143.0,
+    rateAuPerYear: 3.24,
+    minAu: 10.0,
+    dir: [0.448, -0.528, -0.721],
+  },
+  "new-horizons": {
+    anchorAu: 65.5,
+    rateAuPerYear: 2.89,
+    minAu: 8.0,
+    dir: [0.365, -0.929, 0.052],
+  },
+};
+
 export function daysSinceJ2000(epochMs: number): number {
   return (epochMs - J2000_UNIX_MS) / MS_PER_DAY;
 }
@@ -153,7 +205,7 @@ export function solveKeplerEquation(
 ): number {
   const m = normalizeRadians(meanAnomalyRad);
   let eccentric = m + eccentricity * Math.sin(m);
-  for (let iter = 0; iter < 10; iter += 1) {
+  for (let iter = 0; iter < 15; iter += 1) {
     const f = eccentric - eccentricity * Math.sin(eccentric) - m;
     const fPrime = 1 - eccentricity * Math.cos(eccentric);
     const delta = f / fPrime;
@@ -211,18 +263,19 @@ export function computeHeliocentricEclipticAu(
   }
 
   const d = daysSinceJ2000(epochMs);
-  const elements = PLANET_ELEMENTS[slug];
+  const elements = PLANET_ELEMENTS[slug] ?? SPACECRAFT_ORBIT_ELEMENTS[slug];
   if (elements) {
     return eclipticFromElements(elements, d / 36525);
   }
 
-  if (slug === "voyager-1") {
-    // Anchor near Voyager 1's 2026 heliocentric state (~168 AU, outbound ~3.57 AU/yr)
-    const yearsFrom2026 = (epochMs - Date.UTC(2026, 10, 26, 0, 0, 0)) / (365.25 * MS_PER_DAY);
-    const rangeAu = Math.max(12, 168.0 + yearsFrom2026 * 3.57);
-    const dirX = -0.148;
-    const dirY = -0.817;
-    const dirZ = 0.557;
+  const outbound = OUTBOUND_MISSIONS[slug];
+  if (outbound) {
+    const yearsFrom2026 = (epochMs - ANCHOR_2026_MS) / (365.25 * MS_PER_DAY);
+    const rangeAu = Math.max(
+      outbound.minAu,
+      outbound.anchorAu + yearsFrom2026 * outbound.rateAuPerYear,
+    );
+    const [dirX, dirY, dirZ] = outbound.dir;
     const norm = Math.hypot(dirX, dirY, dirZ);
     return [
       (dirX / norm) * rangeAu,
@@ -242,7 +295,7 @@ export function eclipticAuToScene(vecAu: Vec3): Vec3 {
   }
 
   // Smooth logarithmic radial compression: keeps inner planets clear of the Sun
-  // while keeping Neptune and Voyager 1 framed cleanly in the 3D scene.
+  // while keeping Neptune and deep-space probes framed cleanly in the 3D scene.
   const sceneR = 3.0 + Math.log(1 + rAu * 2.2) * 10.8;
   const scale = sceneR / rAu;
 
@@ -284,4 +337,58 @@ export function sampleKeplerOrbitCurve(
     points.push(eclipticAuToScene(eclipticAu));
   }
   return points;
+}
+
+export function sampleSpacecraftTrajectoryCurve(
+  slug: string,
+  epochMs: number,
+  segments = 120,
+): SpacecraftTrajectoryCurve | null {
+  const orbitElements = SPACECRAFT_ORBIT_ELEMENTS[slug];
+  if (orbitElements) {
+    const centuries = daysSinceJ2000(epochMs) / 36525;
+    const points: Vec3[] = [];
+    for (let i = 0; i < segments; i += 1) {
+      const meanAnomaly = (i / segments) * Math.PI * 2;
+      const eclipticAu = eclipticFromElements(
+        orbitElements,
+        centuries,
+        meanAnomaly,
+      );
+      points.push(eclipticAuToScene(eclipticAu));
+    }
+    return { points, closed: true };
+  }
+
+  const outbound = OUTBOUND_MISSIONS[slug];
+  if (outbound) {
+    const yearsFrom2026 = (epochMs - ANCHOR_2026_MS) / (365.25 * MS_PER_DAY);
+    const currentAu = Math.max(
+      outbound.minAu,
+      outbound.anchorAu + yearsFrom2026 * outbound.rateAuPerYear,
+    );
+    const maxAu = currentAu * 1.12;
+    const startAu = 1.0;
+    const [dirX, dirY, dirZ] = outbound.dir;
+    const norm = Math.hypot(dirX, dirY, dirZ);
+    const ux = dirX / norm;
+    const uy = dirY / norm;
+    const uz = dirZ / norm;
+
+    const steps = Math.max(24, Math.floor(segments / 2));
+    const points: Vec3[] = [];
+    for (let i = 0; i <= steps; i += 1) {
+      const frac = i / steps;
+      const rAu = startAu * Math.pow(maxAu / startAu, frac);
+      // Slight gentle curve near inner solar system representing gravity-assist bend
+      const bend = Math.sin(frac * Math.PI) * (1 - frac) * 0.14;
+      const vx = ux * rAu - uy * rAu * bend;
+      const vy = uy * rAu + ux * rAu * bend;
+      const vz = uz * rAu * Math.pow(frac, 0.72);
+      points.push(eclipticAuToScene([vx, vy, vz]));
+    }
+    return { points, closed: false };
+  }
+
+  return null;
 }

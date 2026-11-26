@@ -1,4 +1,4 @@
-from datetime import datetime
+﻿from datetime import datetime
 from typing import TypedDict
 
 from sqlalchemy import select
@@ -129,6 +129,33 @@ INITIAL_BODIES: list[BodySeed] = [
         "orbital_period_days": None,
         "ephemeris_source": "horizons-seed",
     },
+    {
+        "slug": "voyager-2",
+        "name": "Voyager 2",
+        "body_type": "spacecraft",
+        "parent_slug": "sun",
+        "radius_km": None,
+        "orbital_period_days": None,
+        "ephemeris_source": "horizons-seed",
+    },
+    {
+        "slug": "new-horizons",
+        "name": "New Horizons",
+        "body_type": "spacecraft",
+        "parent_slug": "sun",
+        "radius_km": None,
+        "orbital_period_days": None,
+        "ephemeris_source": "horizons-seed",
+    },
+    {
+        "slug": "parker-solar-probe",
+        "name": "Parker Solar Probe",
+        "body_type": "spacecraft",
+        "parent_slug": "sun",
+        "radius_km": None,
+        "orbital_period_days": 88.07,
+        "ephemeris_source": "horizons-seed",
+    },
 ]
 
 INITIAL_TELEMETRY: list[TelemetrySeed] = [
@@ -219,6 +246,30 @@ INITIAL_TELEMETRY: list[TelemetrySeed] = [
         "position_y_km": -20450000000.0,
         "position_z_km": 13920000000.0,
         "velocity_kms": 16.99,
+    },
+    {
+        "slug": "voyager-2",
+        "epoch_utc": REFERENCE_EPOCH,
+        "position_x_km": 9580000000.0,
+        "position_y_km": -11290000000.0,
+        "position_z_km": -15420000000.0,
+        "velocity_kms": 15.37,
+    },
+    {
+        "slug": "new-horizons",
+        "epoch_utc": REFERENCE_EPOCH,
+        "position_x_km": 3580000000.0,
+        "position_y_km": -9110000000.0,
+        "position_z_km": 510000000.0,
+        "velocity_kms": 13.68,
+    },
+    {
+        "slug": "parker-solar-probe",
+        "epoch_utc": REFERENCE_EPOCH,
+        "position_x_km": -52400000.0,
+        "position_y_km": 58100000.0,
+        "position_z_km": 2650000.0,
+        "velocity_kms": 56.40,
     },
 ]
 

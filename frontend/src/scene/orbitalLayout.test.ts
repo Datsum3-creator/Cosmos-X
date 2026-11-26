@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+﻿import { describe, expect, it } from "vitest";
 import type { CelestialBody, TelemetrySnapshot } from "../api/bodies";
 import { MS_PER_DAY } from "./ephemeris";
 import {
@@ -6,6 +6,7 @@ import {
   computeBodyPositions,
   getBodyOrbitCurve,
   getBodyVisualSpec,
+  getSpacecraftTrajectoryCurve,
 } from "./orbitalLayout";
 
 const SAMPLE_BODIES: CelestialBody[] = [
@@ -40,6 +41,39 @@ const SAMPLE_BODIES: CelestialBody[] = [
     radius_km: 1737.4,
     orbital_period_days: 27.322,
     ephemeris_source: "j2000-seed",
+    created_at: "2026-11-26T00:00:00Z",
+  },
+  {
+    id: 4,
+    slug: "voyager-2",
+    name: "Voyager 2",
+    body_type: "spacecraft",
+    parent_slug: "sun",
+    radius_km: null,
+    orbital_period_days: null,
+    ephemeris_source: "horizons-seed",
+    created_at: "2026-11-26T00:00:00Z",
+  },
+  {
+    id: 5,
+    slug: "new-horizons",
+    name: "New Horizons",
+    body_type: "spacecraft",
+    parent_slug: "sun",
+    radius_km: null,
+    orbital_period_days: null,
+    ephemeris_source: "horizons-seed",
+    created_at: "2026-11-26T00:00:00Z",
+  },
+  {
+    id: 6,
+    slug: "parker-solar-probe",
+    name: "Parker Solar Probe",
+    body_type: "spacecraft",
+    parent_slug: "sun",
+    radius_km: null,
+    orbital_period_days: 88.07,
+    ephemeris_source: "horizons-seed",
     created_at: "2026-11-26T00:00:00Z",
   },
 ];
@@ -103,5 +137,25 @@ describe("orbitalLayout", () => {
     const trail = buildTelemetryTrailCurve(snapshots);
     expect(trail).toHaveLength(2);
     expect(trail[0][0]).toBeGreaterThan(trail[1][0]);
+  });
+
+  it("computes outbound and solar-diving trajectories for deep-space missions", () => {
+    const epochMs = Date.UTC(2026, 10, 26, 0, 0, 0);
+    const positions = computeBodyPositions(SAMPLE_BODIES, epochMs);
+
+    // Voyager 2 travels in the southern ecliptic hemisphere (-Y in Three.js)
+    expect(positions["voyager-2"][1]).toBeLessThan(0);
+
+    const v2Curve = getSpacecraftTrajectoryCurve(SAMPLE_BODIES[3], epochMs);
+    expect(v2Curve).not.toBeNull();
+    expect(v2Curve?.closed).toBe(false);
+    expect(v2Curve?.points.length).toBeGreaterThan(20);
+
+    const nhCurve = getSpacecraftTrajectoryCurve(SAMPLE_BODIES[4], epochMs);
+    expect(nhCurve?.closed).toBe(false);
+
+    const pspCurve = getSpacecraftTrajectoryCurve(SAMPLE_BODIES[5], epochMs);
+    expect(pspCurve?.closed).toBe(true);
+    expect(pspCurve?.points).toHaveLength(160);
   });
 });

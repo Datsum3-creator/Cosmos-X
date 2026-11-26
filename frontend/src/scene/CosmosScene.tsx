@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+﻿import { useEffect, useMemo, useRef } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -8,6 +8,7 @@ import {
   computeBodyPositions,
   getBodyOrbitCurve,
   getBodyVisualSpec,
+  getSpacecraftTrajectoryCurve,
   type Vec3,
 } from "./orbitalLayout";
 
@@ -171,13 +172,13 @@ function BodyLabel({ text, offsetY, isSelected }: BodyLabelProps) {
     if (ctx) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.font = isSelected
-        ? "600 24px Inter, system-ui, sans-serif"
-        : "500 22px Inter, system-ui, sans-serif";
+        ? "600 22px Inter, system-ui, sans-serif"
+        : "500 20px Inter, system-ui, sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
 
       const metrics = ctx.measureText(text);
-      const pillW = Math.min(240, Math.max(96, metrics.width + 32));
+      const pillW = Math.min(248, Math.max(96, metrics.width + 28));
       const pillH = 38;
       const x = (canvas.width - pillW) / 2;
       const y = (canvas.height - pillH) / 2;
@@ -210,7 +211,7 @@ function BodyLabel({ text, offsetY, isSelected }: BodyLabelProps) {
   }, [texture]);
 
   return (
-    <sprite position={[0, offsetY, 0]} scale={[3.6, 0.9, 1]}>
+    <sprite position={[0, offsetY, 0]} scale={[3.8, 0.95, 1]}>
       <spriteMaterial
         map={texture}
         transparent
@@ -246,6 +247,48 @@ function OrbitPath({ points, isSelected }: OrbitPathProps) {
       }
     };
   }, [lineObject]);
+
+  return <primitive object={lineObject} />;
+}
+
+interface MissionTrajectoryPathProps {
+  points: Vec3[];
+  closed: boolean;
+  color: string;
+  isSelected: boolean;
+}
+
+function MissionTrajectoryPath({
+  points,
+  closed,
+  color,
+  isSelected,
+}: MissionTrajectoryPathProps) {
+  const lineObject = useMemo(() => {
+    const vectors = points.map(([x, y, z]) => new THREE.Vector3(x, y, z));
+    const geometry = new THREE.BufferGeometry().setFromPoints(vectors);
+    const material = new THREE.LineBasicMaterial({
+      color,
+      transparent: true,
+      opacity: isSelected ? 0.95 : 0.44,
+    });
+    return closed
+      ? new THREE.LineLoop(geometry, material)
+      : new THREE.Line(geometry, material);
+  }, [points, closed, color, isSelected]);
+
+  useEffect(() => {
+    return () => {
+      lineObject.geometry.dispose();
+      if (lineObject.material instanceof THREE.Material) {
+        lineObject.material.dispose();
+      }
+    };
+  }, [lineObject]);
+
+  if (points.length < 2) {
+    return null;
+  }
 
   return <primitive object={lineObject} />;
 }
@@ -312,7 +355,11 @@ function SolarSystemRig({
       bodies.map((body, index) => {
         const spec = getBodyVisualSpec(body, index);
         const orbitCurve = getBodyOrbitCurve(body, spec, curveEpochAnchor);
-        return { body, spec, orbitCurve };
+        const missionTrajectory = getSpacecraftTrajectoryCurve(
+          body,
+          curveEpochAnchor,
+        );
+        return { body, spec, orbitCurve, missionTrajectory };
       }),
     [bodies, curveEpochAnchor],
   );
@@ -509,6 +556,21 @@ function SolarSystemRig({
           <OrbitPath
             key={`orbit-${body.slug}`}
             points={orbitCurve}
+            isSelected={selectedSlug === body.slug}
+          />
+        );
+      })}
+
+      {specs.map(({ body, spec, missionTrajectory }) => {
+        if (!missionTrajectory) {
+          return null;
+        }
+        return (
+          <MissionTrajectoryPath
+            key={`mission-${body.slug}`}
+            points={missionTrajectory.points}
+            closed={missionTrajectory.closed}
+            color={spec.color}
             isSelected={selectedSlug === body.slug}
           />
         );

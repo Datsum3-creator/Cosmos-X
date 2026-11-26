@@ -1,14 +1,16 @@
-import type { CelestialBody, TelemetrySnapshot } from "../api/bodies";
+﻿import type { CelestialBody, TelemetrySnapshot } from "../api/bodies";
 import {
   MS_PER_DAY,
   computeHeliocentricEclipticAu,
   computeMoonOffsetScene,
   eclipticAuToScene,
   sampleKeplerOrbitCurve,
+  sampleSpacecraftTrajectoryCurve,
+  type SpacecraftTrajectoryCurve,
   type Vec3,
 } from "./ephemeris";
 
-export type { Vec3 };
+export type { SpacecraftTrajectoryCurve, Vec3 };
 
 const AU_KM = 149_597_870.7;
 
@@ -123,6 +125,33 @@ const KNOWN_SPECS: Record<string, Omit<BodyVisualSpec, "slug">> = {
     inclinationRad: 0.35,
     hasRing: false,
   },
+  "voyager-2": {
+    color: "#2dd4bf",
+    emissive: "#0d9488",
+    visualRadius: 0.34,
+    orbitRadius: 45,
+    initialAngleRad: 2.25,
+    inclinationRad: -0.45,
+    hasRing: false,
+  },
+  "new-horizons": {
+    color: "#c084fc",
+    emissive: "#7e22ce",
+    visualRadius: 0.32,
+    orbitRadius: 43,
+    initialAngleRad: 4.95,
+    inclinationRad: 0.04,
+    hasRing: false,
+  },
+  "parker-solar-probe": {
+    color: "#fb923c",
+    emissive: "#ea580c",
+    visualRadius: 0.3,
+    orbitRadius: 5.5,
+    initialAngleRad: 1.15,
+    inclinationRad: 0.06,
+    hasRing: false,
+  },
 };
 
 export function getBodyVisualSpec(
@@ -181,6 +210,16 @@ export function getBodyOrbitCurve(
     ]);
   }
   return fallback;
+}
+
+export function getSpacecraftTrajectoryCurve(
+  body: CelestialBody,
+  epochMs: number,
+): SpacecraftTrajectoryCurve | null {
+  if (body.body_type !== "spacecraft") {
+    return null;
+  }
+  return sampleSpacecraftTrajectoryCurve(body.slug, epochMs, 160);
 }
 
 export function buildTelemetryTrailCurve(

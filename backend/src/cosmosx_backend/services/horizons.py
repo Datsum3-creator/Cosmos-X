@@ -8,7 +8,7 @@ from urllib.request import Request, urlopen
 
 HORIZONS_API_URL = "https://ssd.jpl.nasa.gov/api/horizons.api"
 
-# JPL Horizons major body / spacecraft IDs
+# JPL Horizons major body / spacecraft NAIF IDs
 HORIZONS_COMMAND_IDS: dict[str, str] = {
     "sun": "10",
     "mercury": "199",
@@ -21,6 +21,9 @@ HORIZONS_COMMAND_IDS: dict[str, str] = {
     "uranus": "799",
     "neptune": "899",
     "voyager-1": "-31",
+    "voyager-2": "-32",
+    "new-horizons": "-98",
+    "parker-solar-probe": "-96",
 }
 
 
@@ -117,7 +120,7 @@ def fetch_horizons_state_vector(
         "REF_PLANE": "ECLIPTIC",
     }
     url = f"{HORIZONS_API_URL}?{urlencode(params)}"
-    req = Request(url, headers={"User-Agent": "COSMOS-X/0.2"})
+    req = Request(url, headers={"User-Agent": "COSMOS-X/0.3"})
     with urlopen(req, timeout=timeout_s) as resp:  # nosec B310
         raw = resp.read().decode("utf-8", errors="replace")
 
