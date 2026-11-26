@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { CelestialBody } from "../api/bodies";
-import { computeBodyPositions, getBodyVisualSpec } from "./orbitalLayout";
+import { MS_PER_DAY } from "./ephemeris";
+import {
+  computeBodyPositions,
+  getBodyOrbitCurve,
+  getBodyVisualSpec,
+} from "./orbitalLayout";
 
 const SAMPLE_BODIES: CelestialBody[] = [
   {
@@ -40,28 +45,33 @@ const SAMPLE_BODIES: CelestialBody[] = [
 
 describe("orbitalLayout", () => {
   it("anchors the sun at origin and places moon relative to earth", () => {
-    const positions = computeBodyPositions(SAMPLE_BODIES, 0);
+    const epochMs = Date.UTC(2026, 10, 26, 0, 0, 0);
+    const positions = computeBodyPositions(SAMPLE_BODIES, epochMs);
     expect(positions.sun).toEqual([0, 0, 0]);
 
     const earth = positions.earth;
     const moon = positions.moon;
-    const dx = moon[0] - earth[0];
-    const dy = moon[1] - earth[1];
-    const dz = moon[2] - earth[2];
-    const distance = Math.hypot(dx, dy, dz);
+    const distance = Math.hypot(
+      moon[0] - earth[0],
+      moon[1] - earth[1],
+      moon[2] - earth[2],
+    );
 
     const moonSpec = getBodyVisualSpec(SAMPLE_BODIES[2], 2);
     expect(distance).toBeCloseTo(moonSpec.orbitRadius, 1);
   });
 
-  it("advances earth along its orbit as simulation days progress", () => {
-    const day0 = computeBodyPositions(SAMPLE_BODIES, 0).earth;
-    const quarterYear = computeBodyPositions(SAMPLE_BODIES, 91.314).earth;
+  it("advances earth along its J2000 orbit and generates elliptical curve points", () => {
+    const t0 = Date.UTC(2026, 10, 26, 0, 0, 0);
+    const tQuarterYear = t0 + 91.314 * MS_PER_DAY;
+    const day0 = computeBodyPositions(SAMPLE_BODIES, t0).earth;
+    const quarterYear = computeBodyPositions(SAMPLE_BODIES, tQuarterYear).earth;
 
     expect(day0[0]).not.toBeCloseTo(quarterYear[0], 1);
-    expect(Math.hypot(day0[0], day0[2])).toBeCloseTo(
-      Math.hypot(quarterYear[0], quarterYear[2]),
-      3,
-    );
+
+    const earthSpec = getBodyVisualSpec(SAMPLE_BODIES[1], 1);
+    const curve = getBodyOrbitCurve(SAMPLE_BODIES[1], earthSpec, t0);
+    expect(curve).not.toBeNull();
+    expect(curve).toHaveLength(160);
   });
 });

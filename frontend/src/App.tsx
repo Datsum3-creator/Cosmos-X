@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchBodies,
   fetchLatestTelemetry,
@@ -11,10 +11,14 @@ import {
   type DbHealthResponse,
   type HealthResponse,
 } from "./api/health";
-import { CosmosScene } from "./scene/CosmosScene";
+import { CosmosScene, type SeekRequest } from "./scene/CosmosScene";
+import { computeHeliocentricEclipticAu } from "./scene/ephemeris";
+import { formatWorkspaceHash, parseWorkspaceHash } from "./utils/urlHashState";
 
 const RATE_OPTIONS = [1, 10, 45, 180] as const;
 const AU_KM = 149_597_870.7;
+const SCRUB_MIN_MS = Date.UTC(2020, 0, 1, 0, 0, 0);
+const SCRUB_MAX_MS = Date.UTC(2035, 11, 31, 23, 59, 0);
 
 interface TelemetryState {
   slug: string;
@@ -33,9 +37,24 @@ function formatEpochUtc(epoch: string): string {
   return `${epoch.replace("T", " ").slice(0, 19)} UTC`;
 }
 
+function formatSimUtc(epochMs: number): string {
+  return `${new Date(epochMs).toISOString().replace("T", " ").slice(0, 16)} UTC`;
+}
+
+function clampScrubMs(epochMs: number): number {
+  return Math.min(SCRUB_MAX_MS, Math.max(SCRUB_MIN_MS, epochMs));
+}
+
 export function App() {
+  const initialHash = useMemo(
+    () => parseWorkspaceHash(window.location.hash),
+    [],
+  );
+
   const [bodies, setBodies] = useState<CelestialBody[]>([]);
-  const [selectedSlug, setSelectedSlug] = useState<string | null>("earth");
+  const [selectedSlug, setSelectedSlug] = useState<string | null>(
+    () => initialHash.slug ?? "earth",
+  );
   const [telemetryState, setTelemetryState] = useState<TelemetryState | null>(
     null,
   );
@@ -43,10 +62,21 @@ export function App() {
   const [dbHealth, setDbHealth] = useState<DbHealthResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [isPlaying, setIsPlaying] = useState<boolean>(true);
-  const [daysPerSecond, setDaysPerSecond] = useState<number>(10);
-  const [simDays, setSimDays] = useState<number>(0);
+  const [isPlaying, setIsPlaying] = useState<boolean>(
+    () => !(initialHash.paused ?? false),
+  );
+  const [daysPerSecond, setDaysPerSecond] = useState<number>(
+    () => initialHash.rate ?? 10,
+  );
+  const [epochMs, setEpochMs] = useState<number>(
+    () => initialHash.epochMs ?? Date.now(),
+  );
+  const [seekRequest, setSeekRequest] = useState<SeekRequest>({
+    epochMs: 0,
+    nonce: 0,
+  });
   const [resetSignal, setResetSignal] = useState<number>(0);
+  const lastHashSyncRef = useRef<number>(0);
 
   useEffect(() => {
     let active = true;
@@ -65,7 +95,7 @@ export function App() {
         setDbHealth(db);
         setBodies(catalog);
         setSelectedSlug((current) =>
-          catalog.some((item) => item.slug === current)
+          current && catalog.some((item) => item.slug === current)
             ? current
             : (catalog[0]?.slug ?? null),
         );
@@ -87,6 +117,51 @@ export function App() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    const onHashChange = () => {
+      const parsed = parseWorkspaceHash(window.location.hash);
+      if (parsed.slug !== null) {
+        setSelectedSlug(parsed.slug);
+      }
+      if (parsed.rate !== null) {
+        setDaysPerSecond(parsed.rate);
+      }
+      if (parsed.paused !== null) {
+        setIsPlaying(!parsed.paused);
+      }
+      if (parsed.epochMs !== null) {
+        const targetEpoch = parsed.epochMs;
+        setEpochMs(targetEpoch);
+        setSeekRequest((prev) => ({
+          epochMs: targetEpoch,
+          nonce: prev.nonce + 1,
+        }));
+      }
+    };
+
+    window.addEventListener("hashchange", onHashChange);
+    return () => {
+      window.removeEventListener("hashchange", onHashChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    const now = Date.now();
+    if (isPlaying && now - lastHashSyncRef.current < 1000) {
+      return;
+    }
+    lastHashSyncRef.current = now;
+    const nextHash = formatWorkspaceHash({
+      slug: selectedSlug,
+      rate: daysPerSecond,
+      epochMs,
+      paused: !isPlaying,
+    });
+    if (window.location.hash !== nextHash) {
+      window.history.replaceState(null, "", nextHash);
+    }
+  }, [selectedSlug, daysPerSecond, epochMs, isPlaying]);
 
   useEffect(() => {
     if (!selectedSlug) {
@@ -140,7 +215,7 @@ export function App() {
   const telemetry = activeTelemetry?.snapshot ?? null;
   const telemetryError = activeTelemetry?.error ?? null;
 
-  const heliocentricAu = useMemo(() => {
+  const snapshotRangeAu = useMemo(() => {
     if (!telemetry) {
       return null;
     }
@@ -151,6 +226,34 @@ export function App() {
     );
     return distKm / AU_KM;
   }, [telemetry]);
+
+  const liveJ2000RangeAu = useMemo(() => {
+    if (!selectedSlug) {
+      return null;
+    }
+    const vec = computeHeliocentricEclipticAu(selectedSlug, epochMs);
+    if (!vec) {
+      return null;
+    }
+    return Math.hypot(vec[0], vec[1], vec[2]);
+  }, [selectedSlug, epochMs]);
+
+  const handleScrubChange = useCallback((nextEpochMs: number) => {
+    setEpochMs(nextEpochMs);
+    setSeekRequest((prev) => ({
+      epochMs: nextEpochMs,
+      nonce: prev.nonce + 1,
+    }));
+  }, []);
+
+  const handleJumpNow = useCallback(() => {
+    const now = Date.now();
+    setEpochMs(now);
+    setSeekRequest((prev) => ({
+      epochMs: now,
+      nonce: prev.nonce + 1,
+    }));
+  }, []);
 
   const handleResetView = useCallback(() => {
     setSelectedSlug(null);
@@ -168,15 +271,17 @@ export function App() {
           onSelectBody={setSelectedSlug}
           isPlaying={isPlaying}
           daysPerSecond={daysPerSecond}
+          epochMs={epochMs}
+          seekRequest={seekRequest}
           resetSignal={resetSignal}
-          onSimDaysTick={setSimDays}
+          onEpochTick={setEpochMs}
         />
       </div>
 
       <header className="hud-panel hud-top">
         <div className="brand">
           <span className="brand-title">COSMOS X</span>
-          <span className="brand-sub">Phase 1 · 3D Orbital Workspace</span>
+          <span className="brand-sub">Phase 1 · J2000 Orbital Workspace</span>
         </div>
 
         <div className="status-row">
@@ -252,6 +357,12 @@ export function App() {
                   ? `${selectedBody.orbital_period_days.toLocaleString("en-US")} days`
                   : "Unbound / Primary"}
               </dd>
+              <dt>Live J2000</dt>
+              <dd className="mono">
+                {liveJ2000RangeAu !== null
+                  ? `${liveJ2000RangeAu.toFixed(4)} AU`
+                  : "Geocentric"}
+              </dd>
               <dt>Ephemeris</dt>
               <dd>{selectedBody.ephemeris_source}</dd>
             </dl>
@@ -273,8 +384,8 @@ export function App() {
                 <dd className="mono">{formatEpochUtc(telemetry.epoch_utc)}</dd>
                 <dt>Range</dt>
                 <dd className="mono">
-                  {heliocentricAu !== null
-                    ? `${heliocentricAu.toFixed(3)} AU`
+                  {snapshotRangeAu !== null
+                    ? `${snapshotRangeAu.toFixed(3)} AU`
                     : "N/A"}
                 </dd>
                 <dt>Velocity</dt>
@@ -304,34 +415,56 @@ export function App() {
       </aside>
 
       <footer className="hud-panel hud-bottom">
-        <div className="controls-group">
-          <button
-            type="button"
-            className="control-btn primary"
-            onClick={() => setIsPlaying((prev) => !prev)}
-          >
-            {isPlaying ? "Pause" : "Play"}
-          </button>
-          {RATE_OPTIONS.map((rate) => (
-            <button
-              key={rate}
-              type="button"
-              className={`control-btn ${daysPerSecond === rate ? "active" : ""}`}
-              onClick={() => setDaysPerSecond(rate)}
-            >
-              {rate}d/s
-            </button>
-          ))}
-          <button
-            type="button"
-            className="control-btn"
-            onClick={handleResetView}
-          >
-            Reset View
-          </button>
+        <div className="scrubber-row">
+          <span className="utc-readout">{formatSimUtc(epochMs)}</span>
+          <input
+            type="range"
+            className="time-slider"
+            aria-label="Simulation UTC epoch"
+            min={SCRUB_MIN_MS}
+            max={SCRUB_MAX_MS}
+            step={86_400_000}
+            value={clampScrubMs(epochMs)}
+            onChange={(event) => handleScrubChange(Number(event.target.value))}
+          />
+          <span className="scrub-bounds">2020 – 2035</span>
         </div>
-        <div className="sim-readout">
-          T+{simDays.toFixed(1)} days · Drag to orbit · Scroll to zoom
+
+        <div className="bottom-controls-row">
+          <div className="controls-group">
+            <button
+              type="button"
+              className="control-btn primary"
+              onClick={() => setIsPlaying((prev) => !prev)}
+            >
+              {isPlaying ? "Pause" : "Play"}
+            </button>
+            {RATE_OPTIONS.map((rate) => (
+              <button
+                key={rate}
+                type="button"
+                className={`control-btn ${daysPerSecond === rate ? "active" : ""}`}
+                onClick={() => setDaysPerSecond(rate)}
+              >
+                {rate}d/s
+              </button>
+            ))}
+            <button
+              type="button"
+              className="control-btn"
+              onClick={handleJumpNow}
+            >
+              Now
+            </button>
+            <button
+              type="button"
+              className="control-btn"
+              onClick={handleResetView}
+            >
+              Reset View
+            </button>
+          </div>
+          <div className="sim-readout">Drag to orbit · Scroll to zoom</div>
         </div>
       </footer>
     </div>

@@ -1,6 +1,14 @@
 import type { CelestialBody } from "../api/bodies";
+import {
+  MS_PER_DAY,
+  computeHeliocentricEclipticAu,
+  computeMoonOffsetScene,
+  eclipticAuToScene,
+  sampleKeplerOrbitCurve,
+  type Vec3,
+} from "./ephemeris";
 
-export type Vec3 = [number, number, number];
+export type { Vec3 };
 
 export interface BodyVisualSpec {
   slug: string;
@@ -17,7 +25,7 @@ const KNOWN_SPECS: Record<string, Omit<BodyVisualSpec, "slug">> = {
   sun: {
     color: "#fbbf24",
     emissive: "#f59e0b",
-    visualRadius: 2.8,
+    visualRadius: 2.5,
     orbitRadius: 0,
     initialAngleRad: 0,
     inclinationRad: 0,
@@ -35,7 +43,7 @@ const KNOWN_SPECS: Record<string, Omit<BodyVisualSpec, "slug">> = {
   venus: {
     color: "#e7c98b",
     emissive: "#2b2110",
-    visualRadius: 0.55,
+    visualRadius: 0.54,
     orbitRadius: 9,
     initialAngleRad: 1.7,
     inclinationRad: 0.03,
@@ -107,7 +115,7 @@ const KNOWN_SPECS: Record<string, Omit<BodyVisualSpec, "slug">> = {
   "voyager-1": {
     color: "#34d399",
     emissive: "#10b981",
-    visualRadius: 0.28,
+    visualRadius: 0.34,
     orbitRadius: 47,
     initialAngleRad: 0.65,
     inclinationRad: 0.35,
@@ -130,7 +138,7 @@ export function getBodyVisualSpec(
     slug: body.slug,
     color: isSpacecraft ? "#34d399" : isMoon ? "#cbd5e1" : "#93c5fd",
     emissive: isSpacecraft ? "#10b981" : "#0f172a",
-    visualRadius: isSpacecraft ? 0.26 : isMoon ? 0.2 : 0.55,
+    visualRadius: isSpacecraft ? 0.28 : isMoon ? 0.2 : 0.55,
     orbitRadius: isMoon ? 1.8 : 10 + index * 3.5,
     initialAngleRad: (index * 1.37) % (Math.PI * 2),
     inclinationRad: isSpacecraft ? 0.25 : 0.03,
@@ -138,9 +146,44 @@ export function getBodyVisualSpec(
   };
 }
 
+export function getBodyOrbitCurve(
+  body: CelestialBody,
+  spec: BodyVisualSpec,
+  epochMs: number,
+): Vec3[] | null {
+  if (
+    body.slug === "sun" ||
+    body.body_type === "spacecraft" ||
+    (body.parent_slug && body.parent_slug !== "sun")
+  ) {
+    return null;
+  }
+
+  const keplerCurve = sampleKeplerOrbitCurve(body.slug, epochMs, 160);
+  if (keplerCurve) {
+    return keplerCurve;
+  }
+
+  if (spec.orbitRadius <= 0) {
+    return null;
+  }
+
+  const segments = 128;
+  const fallback: Vec3[] = [];
+  for (let i = 0; i < segments; i += 1) {
+    const angle = (i / segments) * Math.PI * 2;
+    fallback.push([
+      Math.cos(angle) * spec.orbitRadius,
+      Math.sin(angle) * Math.sin(spec.inclinationRad) * spec.orbitRadius,
+      Math.sin(angle) * spec.orbitRadius,
+    ]);
+  }
+  return fallback;
+}
+
 export function computeBodyPositions(
   bodies: CelestialBody[],
-  simDays: number,
+  epochMs: number,
 ): Record<string, Vec3> {
   const specs = new Map<string, BodyVisualSpec>();
   bodies.forEach((body, idx) => {
@@ -148,44 +191,42 @@ export function computeBodyPositions(
   });
 
   const positions: Record<string, Vec3> = {};
+  const fallbackDays = epochMs / MS_PER_DAY;
 
-  const computeLocalOffset = (body: CelestialBody): Vec3 => {
+  const computeFallbackOffset = (body: CelestialBody): Vec3 => {
     const spec = specs.get(body.slug);
     if (!spec || spec.orbitRadius === 0) {
       return [0, 0, 0];
     }
-
-    if (body.body_type === "spacecraft") {
-      const driftRadius = spec.orbitRadius + Math.min(simDays * 0.002, 12);
-      const angle = spec.initialAngleRad;
-      return [
-        Math.cos(angle) * driftRadius,
-        Math.sin(spec.inclinationRad) * driftRadius * 0.5,
-        Math.sin(angle) * driftRadius,
-      ];
-    }
-
     const period =
       body.orbital_period_days && body.orbital_period_days > 0
         ? body.orbital_period_days
         : 365.25;
-    const angle = spec.initialAngleRad + (simDays / period) * Math.PI * 2;
-    const x = Math.cos(angle) * spec.orbitRadius;
-    const z = Math.sin(angle) * spec.orbitRadius;
-    const y = Math.sin(angle) * Math.sin(spec.inclinationRad) * spec.orbitRadius;
-    return [x, y, z];
+    const angle = spec.initialAngleRad + (fallbackDays / period) * Math.PI * 2;
+    return [
+      Math.cos(angle) * spec.orbitRadius,
+      Math.sin(angle) * Math.sin(spec.inclinationRad) * spec.orbitRadius,
+      Math.sin(angle) * spec.orbitRadius,
+    ];
   };
 
   for (const body of bodies) {
     if (!body.parent_slug || body.parent_slug === "sun") {
-      positions[body.slug] = computeLocalOffset(body);
+      const eclipticAu = computeHeliocentricEclipticAu(body.slug, epochMs);
+      positions[body.slug] = eclipticAu
+        ? eclipticAuToScene(eclipticAu)
+        : computeFallbackOffset(body);
     }
   }
 
   for (const body of bodies) {
     if (body.parent_slug && body.parent_slug !== "sun") {
       const parentPos = positions[body.parent_slug] ?? [0, 0, 0];
-      const offset = computeLocalOffset(body);
+      const spec = specs.get(body.slug);
+      const offset =
+        body.slug === "moon" && spec
+          ? computeMoonOffsetScene(epochMs, spec.orbitRadius)
+          : computeFallbackOffset(body);
       positions[body.slug] = [
         parentPos[0] + offset[0],
         parentPos[1] + offset[1],

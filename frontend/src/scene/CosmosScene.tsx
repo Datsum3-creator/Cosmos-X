@@ -3,7 +3,18 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { CelestialBody } from "../api/bodies";
-import { computeBodyPositions, getBodyVisualSpec } from "./orbitalLayout";
+import { MS_PER_DAY } from "./ephemeris";
+import {
+  computeBodyPositions,
+  getBodyOrbitCurve,
+  getBodyVisualSpec,
+  type Vec3,
+} from "./orbitalLayout";
+
+export interface SeekRequest {
+  epochMs: number;
+  nonce: number;
+}
 
 interface CosmosSceneProps {
   bodies: CelestialBody[];
@@ -11,8 +22,10 @@ interface CosmosSceneProps {
   onSelectBody: (slug: string) => void;
   isPlaying: boolean;
   daysPerSecond: number;
+  epochMs: number;
+  seekRequest: SeekRequest;
   resetSignal: number;
-  onSimDaysTick: (days: number) => void;
+  onEpochTick: (epochMs: number) => void;
 }
 
 function Starfield() {
@@ -26,7 +39,7 @@ function Starfield() {
     };
 
     for (let i = 0; i < count; i += 1) {
-      const radius = 140 + nextRand() * 240;
+      const radius = 160 + nextRand() * 260;
       const theta = nextRand() * Math.PI * 2;
       const phi = Math.acos(2 * nextRand() - 1);
       positions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
@@ -57,30 +70,21 @@ function Starfield() {
 }
 
 interface OrbitPathProps {
-  radius: number;
-  inclinationRad: number;
+  points: Vec3[];
   isSelected: boolean;
 }
 
-function OrbitPath({ radius, inclinationRad, isSelected }: OrbitPathProps) {
+function OrbitPath({ points, isSelected }: OrbitPathProps) {
   const lineObject = useMemo(() => {
-    const segments = 128;
-    const points: THREE.Vector3[] = [];
-    for (let i = 0; i < segments; i += 1) {
-      const angle = (i / segments) * Math.PI * 2;
-      const x = Math.cos(angle) * radius;
-      const z = Math.sin(angle) * radius;
-      const y = Math.sin(angle) * Math.sin(inclinationRad) * radius;
-      points.push(new THREE.Vector3(x, y, z));
-    }
-    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    const vectors = points.map(([x, y, z]) => new THREE.Vector3(x, y, z));
+    const geometry = new THREE.BufferGeometry().setFromPoints(vectors);
     const material = new THREE.LineBasicMaterial({
       color: isSelected ? "#38bdf8" : "#334155",
       transparent: true,
-      opacity: isSelected ? 0.85 : 0.42,
+      opacity: isSelected ? 0.88 : 0.45,
     });
     return new THREE.LineLoop(geometry, material);
-  }, [radius, inclinationRad, isSelected]);
+  }, [points, isSelected]);
 
   useEffect(() => {
     return () => {
@@ -94,48 +98,52 @@ function OrbitPath({ radius, inclinationRad, isSelected }: OrbitPathProps) {
   return <primitive object={lineObject} />;
 }
 
-interface SolarSystemRigProps {
-  bodies: CelestialBody[];
-  selectedSlug: string | null;
-  onSelectBody: (slug: string) => void;
-  isPlaying: boolean;
-  daysPerSecond: number;
-  resetSignal: number;
-  onSimDaysTick: (days: number) => void;
-}
-
 function SolarSystemRig({
   bodies,
   selectedSlug,
   onSelectBody,
   isPlaying,
   daysPerSecond,
+  epochMs,
+  seekRequest,
   resetSignal,
-  onSimDaysTick,
-}: SolarSystemRigProps) {
+  onEpochTick,
+}: CosmosSceneProps) {
   const { camera, gl } = useThree();
   const controlsRef = useRef<OrbitControls | null>(null);
   const groupRefs = useRef(new Map<string, THREE.Group>());
-  const simDaysRef = useRef<number>(0);
-  const lastReportRef = useRef<number>(0);
+  const liveEpochRef = useRef<number>(epochMs);
+  const lastReportWallMsRef = useRef<number>(0);
   const trackedPosRef = useRef<THREE.Vector3 | null>(null);
   const lastSelectedRef = useRef<string | null>(null);
 
+  const curveEpochAnchor =
+    Math.floor(epochMs / (365 * MS_PER_DAY)) * 365 * MS_PER_DAY;
+
   const specs = useMemo(
     () =>
-      bodies.map((body, index) => ({
-        body,
-        spec: getBodyVisualSpec(body, index),
-      })),
-    [bodies],
+      bodies.map((body, index) => {
+        const spec = getBodyVisualSpec(body, index);
+        const orbitCurve = getBodyOrbitCurve(body, spec, curveEpochAnchor);
+        return { body, spec, orbitCurve };
+      }),
+    [bodies, curveEpochAnchor],
   );
+
+  useEffect(() => {
+    if (seekRequest.nonce === 0) {
+      return;
+    }
+    liveEpochRef.current = seekRequest.epochMs;
+    trackedPosRef.current = null;
+  }, [seekRequest]);
 
   useEffect(() => {
     const controls = new OrbitControls(camera, gl.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
     controls.minDistance = 1.2;
-    controls.maxDistance = 180;
+    controls.maxDistance = 240;
     controls.target.set(0, 0, 0);
     controls.update();
     controlsRef.current = controls;
@@ -150,7 +158,7 @@ function SolarSystemRig({
     if (resetSignal === 0) {
       return;
     }
-    camera.position.set(0, 26, 56);
+    camera.position.set(0, 32, 68);
     if (controlsRef.current) {
       controlsRef.current.target.set(0, 0, 0);
       controlsRef.current.update();
@@ -158,17 +166,18 @@ function SolarSystemRig({
     trackedPosRef.current = null;
   }, [camera, resetSignal]);
 
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
     const clampedDelta = Math.min(delta, 0.1);
     if (isPlaying) {
-      simDaysRef.current += clampedDelta * daysPerSecond;
-      if (Math.abs(simDaysRef.current - lastReportRef.current) >= 0.5) {
-        lastReportRef.current = simDaysRef.current;
-        onSimDaysTick(simDaysRef.current);
+      liveEpochRef.current += clampedDelta * daysPerSecond * MS_PER_DAY;
+      const nowWall = state.clock.elapsedTime * 1000;
+      if (nowWall - lastReportWallMsRef.current >= 140) {
+        lastReportWallMsRef.current = nowWall;
+        onEpochTick(liveEpochRef.current);
       }
     }
 
-    const positions = computeBodyPositions(bodies, simDaysRef.current);
+    const positions = computeBodyPositions(bodies, liveEpochRef.current);
     for (const [slug, coords] of Object.entries(positions)) {
       const group = groupRefs.current.get(slug);
       if (group) {
@@ -208,22 +217,22 @@ function SolarSystemRig({
     <>
       <color attach="background" args={["#020617"]} />
       <ambientLight intensity={0.35} />
-      <pointLight position={[0, 0, 0]} intensity={2.6} distance={260} decay={0.5} />
+      <pointLight
+        position={[0, 0, 0]}
+        intensity={2.8}
+        distance={320}
+        decay={0.45}
+      />
       <Starfield />
 
-      {specs.map(({ body, spec }) => {
-        if (
-          spec.orbitRadius <= 0 ||
-          body.body_type === "spacecraft" ||
-          (body.parent_slug && body.parent_slug !== "sun")
-        ) {
+      {specs.map(({ body, orbitCurve }) => {
+        if (!orbitCurve) {
           return null;
         }
         return (
           <OrbitPath
             key={`orbit-${body.slug}`}
-            radius={spec.orbitRadius}
-            inclinationRad={spec.inclinationRad}
+            points={orbitCurve}
             isSelected={selectedSlug === body.slug}
           />
         );
@@ -300,7 +309,7 @@ function SolarSystemRig({
 export function CosmosScene(props: CosmosSceneProps) {
   return (
     <Canvas
-      camera={{ position: [0, 26, 56], fov: 48, near: 0.1, far: 1000 }}
+      camera={{ position: [0, 32, 68], fov: 48, near: 0.1, far: 1200 }}
       dpr={[1, 2]}
       style={{ width: "100%", height: "100%" }}
     >

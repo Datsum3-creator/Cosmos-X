@@ -120,7 +120,7 @@ body,
 .hud-left {
   top: 72px;
   left: 14px;
-  bottom: 78px;
+  bottom: 112px;
   width: 244px;
   padding: 12px;
   display: flex;
@@ -132,7 +132,7 @@ body,
   right: 14px;
   width: 296px;
   padding: 12px 14px;
-  max-height: calc(100vh - 150px);
+  max-height: calc(100vh - 184px);
   overflow-y: auto;
 }
 
@@ -253,10 +253,44 @@ body,
   left: 50%;
   bottom: 14px;
   transform: translateX(-50%);
-  padding: 8px 14px;
+  padding: 9px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: min(640px, calc(100vw - 28px));
+}
+
+.scrubber-row {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
+}
+
+.utc-readout {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #7dd3fc;
+  white-space: nowrap;
+}
+
+.time-slider {
+  flex: 1;
+  accent-color: #38bdf8;
+  cursor: pointer;
+}
+
+.scrub-bounds {
+  font-size: 0.7rem;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.bottom-controls-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
 }
 
 .controls-group {
@@ -270,7 +304,7 @@ body,
   background: rgba(30, 41, 59, 0.85);
   color: #e2e8f0;
   border-radius: 7px;
-  padding: 6px 10px;
+  padding: 5px 10px;
   font-size: 0.78rem;
   cursor: pointer;
   white-space: nowrap;
@@ -294,7 +328,7 @@ body,
 }
 
 .sim-readout {
-  font-size: 0.75rem;
+  font-size: 0.74rem;
   color: #94a3b8;
   white-space: nowrap;
 }
