@@ -1,12 +1,12 @@
-import json
+﻿import json
 import math
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlencode
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
-HORIZONS_API_URL = "https://ssd.horizons.nasa.gov/api/horizons.api"
+HORIZONS_API_URL = "https://ssd.jpl.nasa.gov/api/horizons.api"
 
 # JPL Horizons major body / spacecraft IDs
 HORIZONS_COMMAND_IDS: dict[str, str] = {
@@ -49,9 +49,9 @@ def parse_horizons_vectors(result_text: str, fallback_epoch: datetime) -> StateV
         except ValueError:
             parsed_epoch = fallback_epoch
 
-    x_match = re.search(r"X\s*=\s*([+-]?\d+\.\d+E[+-]?\d+)", block, flags=re.IGNORECASE)
-    y_match = re.search(r"Y\s*=\s*([+-]?\d+\.\d+E[+-]?\d+)", block, flags=re.IGNORECASE)
-    z_match = re.search(r"Z\s*=\s*([+-]?\d+\.\d+E[+-]?\d+)", block, flags=re.IGNORECASE)
+    x_match = re.search(r"\bX\s*=\s*([+-]?\d+\.\d+E[+-]?\d+)", block, flags=re.IGNORECASE)
+    y_match = re.search(r"\bY\s*=\s*([+-]?\d+\.\d+E[+-]?\d+)", block, flags=re.IGNORECASE)
+    z_match = re.search(r"\bZ\s*=\s*([+-]?\d+\.\d+E[+-]?\d+)", block, flags=re.IGNORECASE)
     if not (x_match and y_match and z_match):
         return None
 
@@ -59,9 +59,9 @@ def parse_horizons_vectors(result_text: str, fallback_epoch: datetime) -> StateV
     y_km = float(y_match.group(1))
     z_km = float(z_match.group(1))
 
-    vx_match = re.search(r"VX\s*=\s*([+-]?\d+\.\d+E[+-]?\d+)", block, flags=re.IGNORECASE)
-    vy_match = re.search(r"VY\s*=\s*([+-]?\d+\.\d+E[+-]?\d+)", block, flags=re.IGNORECASE)
-    vz_match = re.search(r"VZ\s*=\s*([+-]?\d+\.\d+E[+-]?\d+)", block, flags=re.IGNORECASE)
+    vx_match = re.search(r"\bVX\s*=\s*([+-]?\d+\.\d+E[+-]?\d+)", block, flags=re.IGNORECASE)
+    vy_match = re.search(r"\bVY\s*=\s*([+-]?\d+\.\d+E[+-]?\d+)", block, flags=re.IGNORECASE)
+    vz_match = re.search(r"\bVZ\s*=\s*([+-]?\d+\.\d+E[+-]?\d+)", block, flags=re.IGNORECASE)
 
     speed_kms: float | None = None
     if vx_match and vy_match and vz_match:
@@ -84,7 +84,7 @@ def fetch_horizons_state_vector(
     slug: str,
     epoch_utc: datetime | None = None,
     *,
-    timeout_s: float = 8.0,
+    timeout_s: float = 20.0,
 ) -> StateVector | None:
     command_id = HORIZONS_COMMAND_IDS.get(slug)
     if not command_id:
@@ -96,7 +96,12 @@ def fetch_horizons_state_vector(
         else (epoch_utc if epoch_utc is not None else datetime.now(UTC).replace(tzinfo=None))
     )
     stop_dt = target_dt + timedelta(hours=1)
-    center = "@399" if slug == "moon" else "@sun"
+    if slug == "moon":
+        center = "500@399"
+    elif slug == "sun":
+        center = "500@0"
+    else:
+        center = "500@10"
 
     params = {
         "format": "json",
@@ -108,11 +113,12 @@ def fetch_horizons_state_vector(
         "START_TIME": f"'{target_dt.strftime('%Y-%m-%d %H:%M')}'",
         "STOP_TIME": f"'{stop_dt.strftime('%Y-%m-%d %H:%M')}'",
         "STEP_SIZE": "'1 h'",
-        "OUT_UNITS": "'KM-S'",
-        "REF_PLANE": "'ECLIPTIC'",
+        "OUT_UNITS": "KM-S",
+        "REF_PLANE": "ECLIPTIC",
     }
     url = f"{HORIZONS_API_URL}?{urlencode(params)}"
-    with urlopen(url, timeout=timeout_s) as resp:  # nosec B310
+    req = Request(url, headers={"User-Agent": "COSMOS-X/0.2"})
+    with urlopen(req, timeout=timeout_s) as resp:  # nosec B310
         raw = resp.read().decode("utf-8", errors="replace")
 
     payload = json.loads(raw)

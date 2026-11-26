@@ -126,7 +126,7 @@ def sync_body_telemetry_from_horizons(
     except OSError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"JPL Horizons request failed for '{slug}': {exc}",
+            detail=f"JPL Horizons request failed for '{slug}': {type(exc).__name__}: {exc}",
         ) from exc
 
     if vector is None:
