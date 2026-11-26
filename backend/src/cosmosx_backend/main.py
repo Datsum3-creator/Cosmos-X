@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import SQLAlchemyError
 
+from cosmosx_backend.api.v1 import router as api_v1_router
 from cosmosx_backend.core.config import settings
 from cosmosx_backend.db.session import check_db_connection
 
@@ -35,6 +36,8 @@ def create_app() -> FastAPI:
         except SQLAlchemyError as exc:
             raise HTTPException(status_code=503, detail="Database unavailable") from exc
         return {"status": "ok", **info}
+
+    app.include_router(api_v1_router, prefix=settings.api_v1_prefix)
 
     return app
 

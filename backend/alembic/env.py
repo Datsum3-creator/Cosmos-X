@@ -3,6 +3,7 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import create_engine, pool
 
+import cosmosx_backend.models  # noqa: F401
 from cosmosx_backend.core.config import settings
 from cosmosx_backend.db.base import Base
 
