@@ -1,4 +1,4 @@
-import type { CelestialBody } from "../api/bodies";
+import type { CelestialBody, TelemetrySnapshot } from "../api/bodies";
 import {
   MS_PER_DAY,
   computeHeliocentricEclipticAu,
@@ -9,6 +9,8 @@ import {
 } from "./ephemeris";
 
 export type { Vec3 };
+
+const AU_KM = 149_597_870.7;
 
 export interface BodyVisualSpec {
   slug: string;
@@ -179,6 +181,26 @@ export function getBodyOrbitCurve(
     ]);
   }
   return fallback;
+}
+
+export function buildTelemetryTrailCurve(
+  snapshots: TelemetrySnapshot[],
+): Vec3[] {
+  if (snapshots.length < 2) {
+    return [];
+  }
+
+  const sorted = [...snapshots].sort(
+    (a, b) => Date.parse(a.epoch_utc) - Date.parse(b.epoch_utc),
+  );
+
+  return sorted.map((snap) =>
+    eclipticAuToScene([
+      snap.position_x_km / AU_KM,
+      snap.position_y_km / AU_KM,
+      snap.position_z_km / AU_KM,
+    ]),
+  );
 }
 
 export function computeBodyPositions(

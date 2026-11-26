@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { CelestialBody } from "../api/bodies";
+import type { CelestialBody, TelemetrySnapshot } from "../api/bodies";
 import { MS_PER_DAY } from "./ephemeris";
 import {
+  buildTelemetryTrailCurve,
   computeBodyPositions,
   getBodyOrbitCurve,
   getBodyVisualSpec,
@@ -73,5 +74,34 @@ describe("orbitalLayout", () => {
     const curve = getBodyOrbitCurve(SAMPLE_BODIES[1], earthSpec, t0);
     expect(curve).not.toBeNull();
     expect(curve).toHaveLength(160);
+  });
+
+  it("orders telemetry snapshots chronologically for 3D trail rendering", () => {
+    const snapshots: TelemetrySnapshot[] = [
+      {
+        id: 2,
+        body_id: 2,
+        epoch_utc: "2026-11-27T00:00:00",
+        position_x_km: 50_000_000,
+        position_y_km: 140_000_000,
+        position_z_km: 0,
+        velocity_kms: 29.8,
+        created_at: "2026-11-27T00:00:00Z",
+      },
+      {
+        id: 1,
+        body_id: 2,
+        epoch_utc: "2026-11-26T00:00:00",
+        position_x_km: 63_580_000,
+        position_y_km: 133_450_000,
+        position_z_km: -12_500,
+        velocity_kms: 29.78,
+        created_at: "2026-11-26T00:00:00Z",
+      },
+    ];
+
+    const trail = buildTelemetryTrailCurve(snapshots);
+    expect(trail).toHaveLength(2);
+    expect(trail[0][0]).toBeGreaterThan(trail[1][0]);
   });
 });

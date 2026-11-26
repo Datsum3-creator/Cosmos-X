@@ -22,12 +22,14 @@ import {
 } from "./api/health";
 import { CosmosScene, type SeekRequest } from "./scene/CosmosScene";
 import { computeHeliocentricEclipticAu } from "./scene/ephemeris";
+import { buildTelemetryTrailCurve } from "./scene/orbitalLayout";
 import { formatWorkspaceHash, parseWorkspaceHash } from "./utils/urlHashState";
 
 const RATE_OPTIONS = [1, 10, 45, 180] as const;
 const AU_KM = 149_597_870.7;
 const SCRUB_MIN_MS = Date.UTC(2020, 0, 1, 0, 0, 0);
 const SCRUB_MAX_MS = Date.UTC(2035, 11, 31, 23, 59, 0);
+const POLL_INTERVAL_MS = 15_000;
 
 interface TelemetryBundle {
   slug: string;
@@ -71,6 +73,7 @@ export function App() {
   const [telemetryBundle, setTelemetryBundle] =
     useState<TelemetryBundle | null>(null);
   const [reloadNonce, setReloadNonce] = useState<number>(0);
+  const [livePoll, setLivePoll] = useState<boolean>(false);
 
   const [apiHealth, setApiHealth] = useState<HealthResponse | null>(null);
   const [dbHealth, setDbHealth] = useState<DbHealthResponse | null>(null);
@@ -207,7 +210,7 @@ export function App() {
       try {
         const snapshots = await fetchBodyTelemetry(
           targetSlug,
-          8,
+          24,
           controller.signal,
         );
         if (!controller.signal.aborted) {
@@ -235,6 +238,18 @@ export function App() {
     };
   }, [selectedSlug, reloadNonce]);
 
+  useEffect(() => {
+    if (!livePoll || !selectedSlug) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setReloadNonce((n) => n + 1);
+    }, POLL_INTERVAL_MS);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [livePoll, selectedSlug]);
+
   const selectedBody = useMemo(
     () => bodies.find((item) => item.slug === selectedSlug) ?? null,
     [bodies, selectedSlug],
@@ -245,9 +260,14 @@ export function App() {
       ? telemetryBundle
       : null;
   const telemetryLoading = selectedSlug !== null && activeBundle === null;
-  const snapshots = activeBundle?.snapshots ?? [];
+  const snapshots = useMemo(() => activeBundle?.snapshots ?? [], [activeBundle]);
   const latestTelemetry = snapshots[0] ?? null;
   const telemetryError = activeBundle?.error ?? null;
+
+  const telemetryTrail = useMemo(
+    () => buildTelemetryTrailCurve(snapshots),
+    [snapshots],
+  );
 
   const snapshotRangeAu = useMemo(() => {
     if (!latestTelemetry) {
@@ -419,6 +439,7 @@ export function App() {
           seekRequest={seekRequest}
           resetSignal={resetSignal}
           showLabels={showLabels}
+          telemetryTrail={telemetryTrail}
           onEpochTick={setEpochMs}
         />
       </div>
@@ -426,7 +447,7 @@ export function App() {
       <header className="hud-panel hud-top">
         <div className="brand">
           <span className="brand-title">COSMOS X</span>
-          <span className="brand-sub">Phase 2 · J2000 &amp; Horizons Workspace</span>
+          <span className="brand-sub">Phase 2 · Telemetry Trails &amp; Sync</span>
         </div>
 
         <div className="status-row">
@@ -682,7 +703,7 @@ export function App() {
                 {snapshots.length > 1 && (
                   <div className="history-block">
                     <div className="history-title">
-                      Recent ({snapshots.length})
+                      Recent ({snapshots.length}) · Trail {telemetryTrail.length} pts
                     </div>
                     <div className="history-list">
                       {snapshots.slice(0, 4).map((snap) => (
@@ -755,6 +776,13 @@ export function App() {
               onClick={() => setShowLabels((prev) => !prev)}
             >
               Labels
+            </button>
+            <button
+              type="button"
+              className={`control-btn ${livePoll ? "active" : ""}`}
+              onClick={() => setLivePoll((prev) => !prev)}
+            >
+              Live Poll
             </button>
             <button
               type="button"

@@ -26,6 +26,7 @@ interface CosmosSceneProps {
   seekRequest: SeekRequest;
   resetSignal: number;
   showLabels?: boolean;
+  telemetryTrail?: Vec3[];
   onEpochTick: (epochMs: number) => void;
 }
 
@@ -173,6 +174,34 @@ function OrbitPath({ points, isSelected }: OrbitPathProps) {
   return <primitive object={lineObject} />;
 }
 
+function TelemetryTrailPath({ points }: { points: Vec3[] }) {
+  const lineObject = useMemo(() => {
+    const vectors = points.map(([x, y, z]) => new THREE.Vector3(x, y, z));
+    const geometry = new THREE.BufferGeometry().setFromPoints(vectors);
+    const material = new THREE.LineBasicMaterial({
+      color: "#34d399",
+      transparent: true,
+      opacity: 0.95,
+    });
+    return new THREE.Line(geometry, material);
+  }, [points]);
+
+  useEffect(() => {
+    return () => {
+      lineObject.geometry.dispose();
+      if (lineObject.material instanceof THREE.Material) {
+        lineObject.material.dispose();
+      }
+    };
+  }, [lineObject]);
+
+  if (points.length < 2) {
+    return null;
+  }
+
+  return <primitive object={lineObject} />;
+}
+
 function SolarSystemRig({
   bodies,
   selectedSlug,
@@ -183,6 +212,7 @@ function SolarSystemRig({
   seekRequest,
   resetSignal,
   showLabels = true,
+  telemetryTrail = [],
   onEpochTick,
 }: CosmosSceneProps) {
   const { camera, gl } = useThree();
@@ -357,6 +387,8 @@ function SolarSystemRig({
           />
         );
       })}
+
+      <TelemetryTrailPath points={telemetryTrail} />
 
       {specs.map(({ body, spec }) => {
         const isSun = body.slug === "sun";
