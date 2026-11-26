@@ -11,6 +11,8 @@ import {
   type Vec3,
 } from "./orbitalLayout";
 
+export type ViewScale = "solar" | "galactic";
+
 export interface SeekRequest {
   epochMs: number;
   nonce: number;
@@ -26,6 +28,7 @@ interface CosmosSceneProps {
   seekRequest: SeekRequest;
   resetSignal: number;
   showLabels?: boolean;
+  viewScale?: ViewScale;
   telemetryTrail?: Vec3[];
   onEpochTick: (epochMs: number) => void;
 }
@@ -39,20 +42,21 @@ const AXIAL_TILT_RAD: Record<string, number> = {
   neptune: 0.494,
 };
 
+function deterministicUnit(index: number, channel: number): number {
+  let h = (index * 374761393 + channel * 668265263) >>> 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
 function Starfield() {
   const { geometry, material } = useMemo(() => {
     const count = 4500;
     const positions = new Float32Array(count * 3);
-    let seed = 42;
-    const nextRand = () => {
-      seed = (seed * 1664525 + 1013904223) % 4294967296;
-      return seed / 4294967296;
-    };
 
     for (let i = 0; i < count; i += 1) {
-      const radius = 160 + nextRand() * 260;
-      const theta = nextRand() * Math.PI * 2;
-      const phi = Math.acos(2 * nextRand() - 1);
+      const radius = 160 + deterministicUnit(i, 1) * 340;
+      const theta = deterministicUnit(i, 2) * Math.PI * 2;
+      const phi = Math.acos(2 * deterministicUnit(i, 3) - 1);
       positions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
       positions[i * 3 + 1] = radius * Math.cos(phi);
       positions[i * 3 + 2] = radius * Math.sin(phi) * Math.sin(theta);
@@ -78,6 +82,78 @@ function Starfield() {
   }, [geometry, material]);
 
   return <points geometry={geometry} material={material} />;
+}
+
+function MilkyWayDisc({ visible }: { visible: boolean }) {
+  const { geometry, material } = useMemo(() => {
+    const starCount = 14000;
+    const arms = 4;
+    const maxRadius = 260;
+    const positions = new Float32Array(starCount * 3);
+    const colors = new Float32Array(starCount * 3);
+
+    const coreColor = new THREE.Color("#fde68a");
+    const armInnerColor = new THREE.Color("#93c5fd");
+    const armOuterColor = new THREE.Color("#67e8f9");
+
+    for (let i = 0; i < starCount; i += 1) {
+      const u1 = deterministicUnit(i, 11);
+      const u2 = deterministicUnit(i, 12);
+      const u3 = deterministicUnit(i, 13);
+
+      const t = Math.pow(u1, 1.35);
+      const radius = 8 + t * maxRadius;
+      const armIndex = i % arms;
+      const armBaseAngle = (armIndex / arms) * Math.PI * 2;
+      const twist = radius * 0.032;
+      const scatter = (u2 - 0.5) * (0.42 + t * 0.55);
+      const angle = armBaseAngle + twist + scatter;
+
+      const thickness = (1 - t * 0.75) * 14 * (u3 - 0.5);
+      positions[i * 3] = Math.cos(angle) * radius;
+      positions[i * 3 + 1] = thickness;
+      positions[i * 3 + 2] = Math.sin(angle) * radius;
+
+      const c =
+        t < 0.25
+          ? coreColor.clone().lerp(armInnerColor, t / 0.25)
+          : armInnerColor.clone().lerp(armOuterColor, (t - 0.25) / 0.75);
+      colors[i * 3] = c.r;
+      colors[i * 3 + 1] = c.g;
+      colors[i * 3 + 2] = c.b;
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+
+    const mat = new THREE.PointsMaterial({
+      size: 1.35,
+      vertexColors: true,
+      sizeAttenuation: true,
+      transparent: true,
+      opacity: 0.72,
+      depthWrite: false,
+    });
+    return { geometry: geo, material: mat };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      geometry.dispose();
+      material.dispose();
+    };
+  }, [geometry, material]);
+
+  if (!visible) {
+    return null;
+  }
+
+  return (
+    <group rotation={[0.28, 0, -0.14]}>
+      <points geometry={geometry} material={material} />
+    </group>
+  );
 }
 
 interface BodyLabelProps {
@@ -212,6 +288,7 @@ function SolarSystemRig({
   seekRequest,
   resetSignal,
   showLabels = true,
+  viewScale = "solar",
   telemetryTrail = [],
   onEpochTick,
 }: CosmosSceneProps) {
@@ -224,6 +301,8 @@ function SolarSystemRig({
   const trackedPosRef = useRef<THREE.Vector3 | null>(null);
   const lastSelectedRef = useRef<string | null>(null);
   const flyGoalPosRef = useRef<THREE.Vector3 | null>(null);
+  const scaleGoalPosRef = useRef<THREE.Vector3 | null>(null);
+  const lastViewScaleRef = useRef<ViewScale>(viewScale);
 
   const curveEpochAnchor =
     Math.floor(epochMs / (365 * MS_PER_DAY)) * 365 * MS_PER_DAY;
@@ -266,6 +345,7 @@ function SolarSystemRig({
 
     const cancelFlyTo = () => {
       flyGoalPosRef.current = null;
+      scaleGoalPosRef.current = null;
     };
     controls.addEventListener("start", cancelFlyTo);
 
@@ -281,13 +361,37 @@ function SolarSystemRig({
       return;
     }
     flyGoalPosRef.current = null;
-    camera.position.set(0, 32, 68);
+    scaleGoalPosRef.current = null;
+    const isGalactic = viewScale === "galactic";
+    camera.position.set(0, isGalactic ? 145 : 32, isGalactic ? 210 : 68);
     if (controlsRef.current) {
+      controlsRef.current.maxDistance = isGalactic ? 520 : 240;
       controlsRef.current.target.set(0, 0, 0);
       controlsRef.current.update();
     }
     trackedPosRef.current = null;
-  }, [camera, resetSignal]);
+  }, [camera, resetSignal, viewScale]);
+
+  useEffect(() => {
+    if (lastViewScaleRef.current === viewScale) {
+      return;
+    }
+    lastViewScaleRef.current = viewScale;
+    flyGoalPosRef.current = null;
+    trackedPosRef.current = null;
+
+    if (viewScale === "galactic") {
+      if (controlsRef.current) {
+        controlsRef.current.maxDistance = 520;
+      }
+      scaleGoalPosRef.current = new THREE.Vector3(0, 145, 210);
+    } else {
+      if (controlsRef.current) {
+        controlsRef.current.maxDistance = 240;
+      }
+      scaleGoalPosRef.current = new THREE.Vector3(0, 32, 68);
+    }
+  }, [viewScale]);
 
   useFrame((state, delta) => {
     const clampedDelta = Math.min(delta, 0.1);
@@ -317,7 +421,28 @@ function SolarSystemRig({
       return;
     }
 
+    if (viewScale === "galactic" && !selectedSlug) {
+      controls.target.lerp(new THREE.Vector3(0, 0, 0), 0.1);
+      if (scaleGoalPosRef.current) {
+        camera.position.lerp(scaleGoalPosRef.current, 0.06);
+        if (camera.position.distanceTo(scaleGoalPosRef.current) < 0.8) {
+          scaleGoalPosRef.current = null;
+        }
+      }
+      controls.update();
+      return;
+    }
+
+    if (scaleGoalPosRef.current && !selectedSlug) {
+      controls.target.lerp(new THREE.Vector3(0, 0, 0), 0.1);
+      camera.position.lerp(scaleGoalPosRef.current, 0.07);
+      if (camera.position.distanceTo(scaleGoalPosRef.current) < 0.4) {
+        scaleGoalPosRef.current = null;
+      }
+    }
+
     if (selectedSlug && positions[selectedSlug]) {
+      scaleGoalPosRef.current = null;
       const [tx, ty, tz] = positions[selectedSlug];
       const currentTarget = new THREE.Vector3(tx, ty, tz);
 
@@ -374,6 +499,7 @@ function SolarSystemRig({
         decay={0.45}
       />
       <Starfield />
+      <MilkyWayDisc visible={viewScale === "galactic"} />
 
       {specs.map(({ body, orbitCurve }) => {
         if (!orbitCurve) {
@@ -480,7 +606,7 @@ function SolarSystemRig({
 export function CosmosScene(props: CosmosSceneProps) {
   return (
     <Canvas
-      camera={{ position: [0, 32, 68], fov: 48, near: 0.1, far: 1200 }}
+      camera={{ position: [0, 32, 68], fov: 48, near: 0.1, far: 1600 }}
       dpr={[1, 2]}
       style={{ width: "100%", height: "100%" }}
     >

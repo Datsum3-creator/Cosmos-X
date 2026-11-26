@@ -20,7 +20,7 @@ import {
   type DbHealthResponse,
   type HealthResponse,
 } from "./api/health";
-import { CosmosScene, type SeekRequest } from "./scene/CosmosScene";
+import { CosmosScene, type SeekRequest, type ViewScale } from "./scene/CosmosScene";
 import { computeHeliocentricEclipticAu } from "./scene/ephemeris";
 import { buildTelemetryTrailCurve } from "./scene/orbitalLayout";
 import { formatWorkspaceHash, parseWorkspaceHash } from "./utils/urlHashState";
@@ -94,6 +94,7 @@ export function App() {
   });
   const [resetSignal, setResetSignal] = useState<number>(0);
   const [showLabels, setShowLabels] = useState<boolean>(true);
+  const [viewScale, setViewScale] = useState<ViewScale>("solar");
 
   const [showIngestForm, setShowIngestForm] = useState<boolean>(false);
   const [ingestEpochInput, setIngestEpochInput] = useState<string>(() =>
@@ -439,6 +440,7 @@ export function App() {
           seekRequest={seekRequest}
           resetSignal={resetSignal}
           showLabels={showLabels}
+          viewScale={viewScale}
           telemetryTrail={telemetryTrail}
           onEpochTick={setEpochMs}
         />
@@ -447,7 +449,7 @@ export function App() {
       <header className="hud-panel hud-top">
         <div className="brand">
           <span className="brand-title">COSMOS X</span>
-          <span className="brand-sub">Phase 2 · Telemetry Trails &amp; Sync</span>
+          <span className="brand-sub">Phase 2 · {viewScale === "galactic" ? "Galactic Scale" : "Telemetry Trails & Sync"}</span>
         </div>
 
         <div className="status-row">
@@ -776,6 +778,16 @@ export function App() {
               onClick={() => setShowLabels((prev) => !prev)}
             >
               Labels
+            </button>
+            <button
+              type="button"
+              className={`control-btn ${viewScale === "galactic" ? "active" : ""}`}
+              onClick={() => {
+                setSelectedSlug(null);
+                setViewScale((prev) => (prev === "solar" ? "galactic" : "solar"));
+              }}
+            >
+              Galactic
             </button>
             <button
               type="button"
