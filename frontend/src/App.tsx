@@ -1,7 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
+import {
+  createBodyTelemetry,
   fetchBodies,
-  fetchLatestTelemetry,
+  fetchBodyTelemetry,
   type CelestialBody,
   type TelemetrySnapshot,
 } from "./api/bodies";
@@ -20,9 +28,9 @@ const AU_KM = 149_597_870.7;
 const SCRUB_MIN_MS = Date.UTC(2020, 0, 1, 0, 0, 0);
 const SCRUB_MAX_MS = Date.UTC(2035, 11, 31, 23, 59, 0);
 
-interface TelemetryState {
+interface TelemetryBundle {
   slug: string;
-  snapshot: TelemetrySnapshot | null;
+  snapshots: TelemetrySnapshot[];
   error: string | null;
 }
 
@@ -45,6 +53,10 @@ function clampScrubMs(epochMs: number): number {
   return Math.min(SCRUB_MAX_MS, Math.max(SCRUB_MIN_MS, epochMs));
 }
 
+function toDatetimeLocalUtc(epochMs: number): string {
+  return new Date(epochMs).toISOString().slice(0, 16);
+}
+
 export function App() {
   const initialHash = useMemo(
     () => parseWorkspaceHash(window.location.hash),
@@ -55,9 +67,10 @@ export function App() {
   const [selectedSlug, setSelectedSlug] = useState<string | null>(
     () => initialHash.slug ?? "earth",
   );
-  const [telemetryState, setTelemetryState] = useState<TelemetryState | null>(
-    null,
-  );
+  const [telemetryBundle, setTelemetryBundle] =
+    useState<TelemetryBundle | null>(null);
+  const [reloadNonce, setReloadNonce] = useState<number>(0);
+
   const [apiHealth, setApiHealth] = useState<HealthResponse | null>(null);
   const [dbHealth, setDbHealth] = useState<DbHealthResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -76,6 +89,23 @@ export function App() {
     nonce: 0,
   });
   const [resetSignal, setResetSignal] = useState<number>(0);
+  const [showLabels, setShowLabels] = useState<boolean>(true);
+
+  const [showIngestForm, setShowIngestForm] = useState<boolean>(false);
+  const [ingestEpochInput, setIngestEpochInput] = useState<string>(() =>
+    toDatetimeLocalUtc(Date.now()),
+  );
+  const [ingestXKm, setIngestXKm] = useState<string>("0");
+  const [ingestYKm, setIngestYKm] = useState<string>("0");
+  const [ingestZKm, setIngestZKm] = useState<string>("0");
+  const [ingestVelKms, setIngestVelKms] = useState<string>("0");
+  const [submittingTelemetry, setSubmittingTelemetry] =
+    useState<boolean>(false);
+  const [ingestFeedback, setIngestFeedback] = useState<{
+    kind: "ok" | "err";
+    text: string;
+  } | null>(null);
+
   const lastHashSyncRef = useRef<number>(0);
 
   useEffect(() => {
@@ -173,22 +203,23 @@ export function App() {
 
     async function loadTelemetry() {
       try {
-        const latest = await fetchLatestTelemetry(
+        const snapshots = await fetchBodyTelemetry(
           targetSlug,
+          8,
           controller.signal,
         );
         if (!controller.signal.aborted) {
-          setTelemetryState({
+          setTelemetryBundle({
             slug: targetSlug,
-            snapshot: latest,
+            snapshots,
             error: null,
           });
         }
       } catch (err) {
         if (!controller.signal.aborted) {
-          setTelemetryState({
+          setTelemetryBundle({
             slug: targetSlug,
-            snapshot: null,
+            snapshots: [],
             error:
               err instanceof Error ? err.message : "Telemetry unavailable",
           });
@@ -200,32 +231,33 @@ export function App() {
     return () => {
       controller.abort();
     };
-  }, [selectedSlug]);
+  }, [selectedSlug, reloadNonce]);
 
   const selectedBody = useMemo(
     () => bodies.find((item) => item.slug === selectedSlug) ?? null,
     [bodies, selectedSlug],
   );
 
-  const activeTelemetry =
-    selectedSlug && telemetryState?.slug === selectedSlug
-      ? telemetryState
+  const activeBundle =
+    selectedSlug && telemetryBundle?.slug === selectedSlug
+      ? telemetryBundle
       : null;
-  const telemetryLoading = selectedSlug !== null && activeTelemetry === null;
-  const telemetry = activeTelemetry?.snapshot ?? null;
-  const telemetryError = activeTelemetry?.error ?? null;
+  const telemetryLoading = selectedSlug !== null && activeBundle === null;
+  const snapshots = activeBundle?.snapshots ?? [];
+  const latestTelemetry = snapshots[0] ?? null;
+  const telemetryError = activeBundle?.error ?? null;
 
   const snapshotRangeAu = useMemo(() => {
-    if (!telemetry) {
+    if (!latestTelemetry) {
       return null;
     }
     const distKm = Math.hypot(
-      telemetry.position_x_km,
-      telemetry.position_y_km,
-      telemetry.position_z_km,
+      latestTelemetry.position_x_km,
+      latestTelemetry.position_y_km,
+      latestTelemetry.position_z_km,
     );
     return distKm / AU_KM;
-  }, [telemetry]);
+  }, [latestTelemetry]);
 
   const liveJ2000RangeAu = useMemo(() => {
     if (!selectedSlug) {
@@ -237,6 +269,86 @@ export function App() {
     }
     return Math.hypot(vec[0], vec[1], vec[2]);
   }, [selectedSlug, epochMs]);
+
+  const handleSelectBody = useCallback((slug: string) => {
+    setSelectedSlug(slug);
+    setIngestFeedback(null);
+  }, []);
+
+  const handleFillFromJ2000 = useCallback(() => {
+    if (!selectedSlug) {
+      return;
+    }
+    const vecAu = computeHeliocentricEclipticAu(selectedSlug, epochMs);
+    if (vecAu) {
+      setIngestXKm((vecAu[0] * AU_KM).toFixed(0));
+      setIngestYKm((vecAu[1] * AU_KM).toFixed(0));
+      setIngestZKm((vecAu[2] * AU_KM).toFixed(0));
+    }
+    setIngestEpochInput(toDatetimeLocalUtc(epochMs));
+  }, [selectedSlug, epochMs]);
+
+  const handleIngestSubmit = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      if (!selectedSlug) {
+        return;
+      }
+
+      const parsedEpochMs = Date.parse(`${ingestEpochInput}:00Z`);
+      const xKm = Number(ingestXKm);
+      const yKm = Number(ingestYKm);
+      const zKm = Number(ingestZKm);
+      const velKms = ingestVelKms.trim() === "" ? null : Number(ingestVelKms);
+
+      if (
+        !Number.isFinite(parsedEpochMs) ||
+        !Number.isFinite(xKm) ||
+        !Number.isFinite(yKm) ||
+        !Number.isFinite(zKm) ||
+        (velKms !== null && !Number.isFinite(velKms))
+      ) {
+        setIngestFeedback({
+          kind: "err",
+          text: "Enter a valid UTC timestamp and numeric coordinates.",
+        });
+        return;
+      }
+
+      setSubmittingTelemetry(true);
+      setIngestFeedback(null);
+      try {
+        await createBodyTelemetry(selectedSlug, {
+          epoch_utc: new Date(parsedEpochMs).toISOString(),
+          position_x_km: xKm,
+          position_y_km: yKm,
+          position_z_km: zKm,
+          velocity_kms: velKms,
+        });
+        setIngestFeedback({
+          kind: "ok",
+          text: "Snapshot persisted to PostgreSQL.",
+        });
+        setReloadNonce((n) => n + 1);
+      } catch (err) {
+        setIngestFeedback({
+          kind: "err",
+          text:
+            err instanceof Error ? err.message : "Failed to save snapshot.",
+        });
+      } finally {
+        setSubmittingTelemetry(false);
+      }
+    },
+    [
+      selectedSlug,
+      ingestEpochInput,
+      ingestXKm,
+      ingestYKm,
+      ingestZKm,
+      ingestVelKms,
+    ],
+  );
 
   const handleScrubChange = useCallback((nextEpochMs: number) => {
     setEpochMs(nextEpochMs);
@@ -257,6 +369,7 @@ export function App() {
 
   const handleResetView = useCallback(() => {
     setSelectedSlug(null);
+    setIngestFeedback(null);
     setResetSignal((count) => count + 1);
   }, []);
 
@@ -268,12 +381,13 @@ export function App() {
         <CosmosScene
           bodies={bodies}
           selectedSlug={selectedSlug}
-          onSelectBody={setSelectedSlug}
+          onSelectBody={handleSelectBody}
           isPlaying={isPlaying}
           daysPerSecond={daysPerSecond}
           epochMs={epochMs}
           seekRequest={seekRequest}
           resetSignal={resetSignal}
+          showLabels={showLabels}
           onEpochTick={setEpochMs}
         />
       </div>
@@ -316,7 +430,7 @@ export function App() {
                 key={body.slug}
                 type="button"
                 className={`catalog-item ${active ? "active" : ""}`}
-                onClick={() => setSelectedSlug(body.slug)}
+                onClick={() => handleSelectBody(body.slug)}
               >
                 <span className="catalog-name">{body.name}</span>
                 <span className="catalog-type">{body.body_type}</span>
@@ -371,36 +485,173 @@ export function App() {
 
             <div className="panel-header sub-header">
               <h2>Latest Telemetry</h2>
-              <span className="badge">/telemetry/latest</span>
+              <button
+                type="button"
+                className="mini-btn"
+                onClick={() => {
+                  setShowIngestForm((open) => !open);
+                  setIngestFeedback(null);
+                }}
+              >
+                {showIngestForm ? "Close" : "+ Log Snapshot"}
+              </button>
             </div>
+
+            {showIngestForm && (
+              <form className="ingest-form" onSubmit={handleIngestSubmit}>
+                <div className="ingest-row-top">
+                  <label className="ingest-label" htmlFor="ingest-epoch">
+                    Epoch UTC
+                  </label>
+                  <button
+                    type="button"
+                    className="link-btn"
+                    onClick={handleFillFromJ2000}
+                  >
+                    Fill J2000
+                  </button>
+                </div>
+                <input
+                  id="ingest-epoch"
+                  type="datetime-local"
+                  className="ingest-input"
+                  value={ingestEpochInput}
+                  onChange={(e) => setIngestEpochInput(e.target.value)}
+                  required
+                />
+                <div className="ingest-grid-2">
+                  <div>
+                    <label className="ingest-label" htmlFor="ingest-x">
+                      X (km)
+                    </label>
+                    <input
+                      id="ingest-x"
+                      type="number"
+                      step="any"
+                      className="ingest-input"
+                      value={ingestXKm}
+                      onChange={(e) => setIngestXKm(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="ingest-label" htmlFor="ingest-y">
+                      Y (km)
+                    </label>
+                    <input
+                      id="ingest-y"
+                      type="number"
+                      step="any"
+                      className="ingest-input"
+                      value={ingestYKm}
+                      onChange={(e) => setIngestYKm(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="ingest-label" htmlFor="ingest-z">
+                      Z (km)
+                    </label>
+                    <input
+                      id="ingest-z"
+                      type="number"
+                      step="any"
+                      className="ingest-input"
+                      value={ingestZKm}
+                      onChange={(e) => setIngestZKm(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="ingest-label" htmlFor="ingest-vel">
+                      Vel (km/s)
+                    </label>
+                    <input
+                      id="ingest-vel"
+                      type="number"
+                      step="any"
+                      className="ingest-input"
+                      value={ingestVelKms}
+                      onChange={(e) => setIngestVelKms(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <button
+                  type="submit"
+                  className="control-btn primary ingest-submit"
+                  disabled={submittingTelemetry}
+                >
+                  {submittingTelemetry ? "Saving..." : "Persist Snapshot"}
+                </button>
+                {ingestFeedback && (
+                  <p
+                    className={`ingest-feedback ${ingestFeedback.kind === "ok" ? "ok" : "err"}`}
+                  >
+                    {ingestFeedback.text}
+                  </p>
+                )}
+              </form>
+            )}
 
             {telemetryLoading ? (
               <p className="empty-state">Loading state vector...</p>
             ) : telemetryError ? (
               <p className="empty-state error-text">{telemetryError}</p>
-            ) : telemetry ? (
-              <dl className="inspector-grid">
-                <dt>Epoch</dt>
-                <dd className="mono">{formatEpochUtc(telemetry.epoch_utc)}</dd>
-                <dt>Range</dt>
-                <dd className="mono">
-                  {snapshotRangeAu !== null
-                    ? `${snapshotRangeAu.toFixed(3)} AU`
-                    : "N/A"}
-                </dd>
-                <dt>Velocity</dt>
-                <dd className="mono">
-                  {telemetry.velocity_kms !== null
-                    ? `${telemetry.velocity_kms.toFixed(2)} km/s`
-                    : "N/A"}
-                </dd>
-                <dt>Pos X</dt>
-                <dd className="mono">{formatCoordKm(telemetry.position_x_km)}</dd>
-                <dt>Pos Y</dt>
-                <dd className="mono">{formatCoordKm(telemetry.position_y_km)}</dd>
-                <dt>Pos Z</dt>
-                <dd className="mono">{formatCoordKm(telemetry.position_z_km)}</dd>
-              </dl>
+            ) : latestTelemetry ? (
+              <>
+                <dl className="inspector-grid">
+                  <dt>Epoch</dt>
+                  <dd className="mono">
+                    {formatEpochUtc(latestTelemetry.epoch_utc)}
+                  </dd>
+                  <dt>Range</dt>
+                  <dd className="mono">
+                    {snapshotRangeAu !== null
+                      ? `${snapshotRangeAu.toFixed(3)} AU`
+                      : "N/A"}
+                  </dd>
+                  <dt>Velocity</dt>
+                  <dd className="mono">
+                    {latestTelemetry.velocity_kms !== null
+                      ? `${latestTelemetry.velocity_kms.toFixed(2)} km/s`
+                      : "N/A"}
+                  </dd>
+                  <dt>Pos X</dt>
+                  <dd className="mono">
+                    {formatCoordKm(latestTelemetry.position_x_km)}
+                  </dd>
+                  <dt>Pos Y</dt>
+                  <dd className="mono">
+                    {formatCoordKm(latestTelemetry.position_y_km)}
+                  </dd>
+                  <dt>Pos Z</dt>
+                  <dd className="mono">
+                    {formatCoordKm(latestTelemetry.position_z_km)}
+                  </dd>
+                </dl>
+
+                {snapshots.length > 1 && (
+                  <div className="history-block">
+                    <div className="history-title">
+                      Recent ({snapshots.length})
+                    </div>
+                    <div className="history-list">
+                      {snapshots.slice(0, 4).map((snap) => (
+                        <div key={snap.id} className="history-row">
+                          <span className="mono">
+                            {snap.epoch_utc.replace("T", " ").slice(0, 16)}
+                          </span>
+                          <span className="mono">
+                            {snap.velocity_kms !== null
+                              ? `${snap.velocity_kms.toFixed(2)} km/s`
+                              : "—"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
             ) : (
               <p className="empty-state">
                 No telemetry snapshots stored for this body.
@@ -449,6 +700,13 @@ export function App() {
                 {rate}d/s
               </button>
             ))}
+            <button
+              type="button"
+              className={`control-btn ${showLabels ? "active" : ""}`}
+              onClick={() => setShowLabels((prev) => !prev)}
+            >
+              Labels
+            </button>
             <button
               type="button"
               className="control-btn"

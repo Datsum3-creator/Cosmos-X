@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  createBodyTelemetry,
   fetchBodies,
   fetchBodyBySlug,
   fetchLatestTelemetry,
@@ -87,5 +88,54 @@ describe("bodies API client", () => {
 
     const result = await fetchLatestTelemetry("earth");
     expect(result).toBeNull();
+  });
+
+  it("creates a telemetry snapshot and handles 409 conflicts", async () => {
+    const created = {
+      id: 12,
+      body_id: 4,
+      epoch_utc: "2026-11-27T00:00:00",
+      position_x_km: 64000000,
+      position_y_km: 133000000,
+      position_z_km: -12000,
+      velocity_kms: 29.8,
+      created_at: "2026-11-27T00:00:00Z",
+    };
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 201,
+        json: async () => created,
+      }),
+    );
+
+    const result = await createBodyTelemetry("earth", {
+      epoch_utc: "2026-11-27T00:00:00Z",
+      position_x_km: 64000000,
+      position_y_km: 133000000,
+      position_z_km: -12000,
+      velocity_kms: 29.8,
+    });
+    expect(result).toEqual(created);
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 409,
+      }),
+    );
+
+    await expect(
+      createBodyTelemetry("earth", {
+        epoch_utc: "2026-11-27T00:00:00Z",
+        position_x_km: 64000000,
+        position_y_km: 133000000,
+        position_z_km: -12000,
+        velocity_kms: 29.8,
+      }),
+    ).rejects.toThrow("already exists");
   });
 });

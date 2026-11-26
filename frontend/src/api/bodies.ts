@@ -2,6 +2,8 @@ import type { components } from "./generated";
 
 export type CelestialBody = components["schemas"]["CelestialBodyRead"];
 export type TelemetrySnapshot = components["schemas"]["TelemetrySnapshotRead"];
+export type TelemetrySnapshotCreate =
+  components["schemas"]["TelemetrySnapshotCreate"];
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
@@ -54,4 +56,25 @@ export async function fetchBodyTelemetry(
     throw new Error(`Telemetry history for '${slug}' failed (${res.status})`);
   }
   return (await res.json()) as TelemetrySnapshot[];
+}
+
+export async function createBodyTelemetry(
+  slug: string,
+  payload: TelemetrySnapshotCreate,
+): Promise<TelemetrySnapshot> {
+  const res = await fetch(
+    `${API_BASE_URL}/api/v1/bodies/${encodeURIComponent(slug)}/telemetry`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
+  if (res.status === 409) {
+    throw new Error("A telemetry snapshot for this body and epoch already exists.");
+  }
+  if (!res.ok) {
+    throw new Error(`Create telemetry for '${slug}' failed (${res.status})`);
+  }
+  return (await res.json()) as TelemetrySnapshot;
 }

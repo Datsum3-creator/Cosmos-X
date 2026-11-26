@@ -130,7 +130,7 @@ body,
 .hud-right {
   top: 72px;
   right: 14px;
-  width: 296px;
+  width: 304px;
   padding: 12px 14px;
   max-height: calc(100vh - 184px);
   overflow-y: auto;
@@ -162,6 +162,21 @@ body,
   background: rgba(56, 189, 248, 0.14);
   color: #7dd3fc;
   text-transform: lowercase;
+}
+
+.mini-btn {
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  background: rgba(14, 116, 144, 0.25);
+  color: #7dd3fc;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.mini-btn:hover {
+  background: rgba(14, 116, 144, 0.42);
 }
 
 .catalog-list {
@@ -238,6 +253,102 @@ body,
   background: rgba(148, 163, 184, 0.18);
 }
 
+.ingest-form {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 9px;
+  margin-bottom: 10px;
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.ingest-row-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ingest-label {
+  font-size: 0.7rem;
+  color: #94a3b8;
+}
+
+.link-btn {
+  border: none;
+  background: transparent;
+  color: #7dd3fc;
+  font-size: 0.7rem;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.ingest-input {
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(15, 23, 42, 0.9);
+  color: #f1f5f9;
+  border-radius: 6px;
+  padding: 4px 7px;
+  font-size: 0.74rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.ingest-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.ingest-submit {
+  width: 100%;
+  margin-top: 2px;
+}
+
+.ingest-feedback {
+  margin: 2px 0 0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.ingest-feedback.ok {
+  color: #86efac;
+}
+
+.ingest-feedback.err {
+  color: #fca5a5;
+}
+
+.history-block {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(148, 163, 184, 0.16);
+}
+
+.history-title {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #64748b;
+  margin-bottom: 5px;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.history-row {
+  display: flex;
+  justify-content: space-between;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.7rem;
+  color: #94a3b8;
+}
+
 .empty-state {
   margin: 6px 0 0;
   font-size: 0.8rem;
@@ -257,7 +368,7 @@ body,
   display: flex;
   flex-direction: column;
   gap: 8px;
-  min-width: min(640px, calc(100vw - 28px));
+  min-width: min(680px, calc(100vw - 28px));
 }
 
 .scrubber-row {
